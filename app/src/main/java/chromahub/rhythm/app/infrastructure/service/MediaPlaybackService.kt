@@ -48,6 +48,12 @@ import chromahub.rhythm.app.infrastructure.widget.WidgetUpdater
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import chromahub.rhythm.app.features.local.di.LocalMusicModule
+import chromahub.rhythm.app.shared.data.model.Album
+import chromahub.rhythm.app.shared.data.model.Artist
 import java.util.concurrent.ConcurrentHashMap
 import java.util.Locale
 import kotlinx.coroutines.*
@@ -2511,6 +2517,147 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
                 .build()
                 
             return Futures.immediateFuture(androidx.media3.session.LibraryResult.ofItem(rootItem, params))
+        }
+
+        /**
+         * CarWith / Android Auto media-browser support.
+         *
+         * Exposes a browseable library tree so connected car screens (Xiaomi CarWith,
+         * Android Auto, etc.) can show Rhythm's local music and let the driver pick
+         * Songs / Albums / Artists, then play them through the media session.
+         *
+         * Structure:
+         *   root
+         *     ├── "songs"       -> every song in the library
+         *     ├── "albums"      -> every album (branch -> its songs)
+         *     └── "artists"     -> every artist (branch -> its albums/songs)
+         *
+         * Branch nodes carry mediaId = "album_<id>" / "artist_<id>"; leaf nodes are
+         * playable MediaItems. All repository calls are guarded so any transient
+         * scan/permission issue degrades to an empty folder instead of a crashed service.
+         */
+        @OptIn(UnstableApi::class)
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<androidx.media3.session.LibraryResult<ImmutableList<MediaItem>>> {
+            return try {
+                val repo = LocalMusicModule.provideMusicRepository(this@MediaPlaybackService.applicationContext)
+                val children: List<MediaItem> = when (parentId) {
+                    // Root -> category folders
+                    "root" -> listOf(
+                        categoryFolder("songs", "Songs"),
+                        categoryFolder("albums", "Albums"),
+                        categoryFolder("artists", "Artists")
+                    )
+
+                    // Songs folder -> every song as a playable item
+                    "songs" -> runBlocking { repo.loadSongs(forceRefresh = false) }
+                        .map { songToMediaItem(it) }
+
+                    // Albums folder -> album branches (browse into -> its songs)
+                    "albums" -> runBlocking { repo.loadAlbums() }
+                        .map { albumBranch(it) }
+
+                    // Artists folder -> artist branches
+                    "artists" -> runBlocking { repo.loadArtists() }
+                        .map { artistBranch(it) }
+
+                    // An album branch -> its songs (playable)
+                    else -> when {
+                        parentId.startsWith("album_") -> runBlocking {
+                            repo.getSongsForAlbumLocal(albumId = parentId.removePrefix("album_"))
+                        }.map { songToMediaItem(it) }
+
+                        parentId.startsWith("artist_") -> runBlocking {
+                            repo.getSongsForArtist(artistId = parentId.removePrefix("artist_"))
+                        }.map { songToMediaItem(it) }
+
+                        else -> emptyList()
+                    }
+                }
+
+                val paged = if (pageSize > 0 && page >= 0) {
+                    ImmutableList.copyOf(children.drop(page * pageSize).take(pageSize))
+                } else {
+                    ImmutableList.copyOf(children)
+                }
+                Futures.immediateFuture(androidx.media3.session.LibraryResult.ofItemList(paged, params))
+            } catch (e: Throwable) {
+                Log.e(TAG, "onGetChildren failed for $parentId", e)
+                Futures.immediateFuture(androidx.media3.session.LibraryResult.ofItemList(ImmutableList.of(), params))
+            }
+        }
+
+        @OptIn(UnstableApi::class)
+        private fun categoryFolder(id: String, title: String): MediaItem {
+            return MediaItem.Builder()
+                .setMediaId(id)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(title)
+                        .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                        .setIsPlayable(false)
+                        .setIsBrowsable(true)
+                        .build()
+                )
+                .build()
+        }
+
+        @OptIn(UnstableApi::class)
+        private fun songToMediaItem(song: Song): MediaItem {
+            return MediaItem.Builder()
+                .setMediaId(song.id)
+                .setUri(song.uri)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(song.title)
+                        .setArtist(song.artist)
+                        .setAlbumTitle(song.album)
+                        .setArtworkUri(song.artworkUri)
+                        .setDurationMs(song.duration)
+                        .setIsPlayable(true)
+                        .setIsBrowsable(false)
+                        .build()
+                )
+                .build()
+        }
+
+        @OptIn(UnstableApi::class)
+        private fun albumBranch(album: Album): MediaItem {
+            return MediaItem.Builder()
+                .setMediaId("album_${album.id}")
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(album.title)
+                        .setArtist(album.artist)
+                        .setArtworkUri(album.artworkUri)
+                        .setIsPlayable(false)
+                        .setIsBrowsable(true)
+                        .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                        .build()
+                )
+                .build()
+        }
+
+        @OptIn(UnstableApi::class)
+        private fun artistBranch(artist: Artist): MediaItem {
+            return MediaItem.Builder()
+                .setMediaId("artist_${artist.id}")
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(artist.name)
+                        .setArtworkUri(artist.artworkUri)
+                        .setIsPlayable(false)
+                        .setIsBrowsable(true)
+                        .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                        .build()
+                )
+                .build()
         }
     }
 
