@@ -14,6 +14,7 @@ import android.widget.Toast
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.AudioMixerAttributes
+import android.bluetooth.BluetoothA2dp
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
 import android.net.Uri
@@ -237,18 +238,18 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action ?: return
             val isConnect = when (action) {
-                AudioManager.ACTION_A2DP_DEVICE_CONNECTED -> true
+                BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED -> true
                 BluetoothDevice.ACTION_ACL_CONNECTED -> true
                 else -> false
             }
             if (!isConnect) return
 
             val state = intent.getIntExtra(
-                AudioManager.EXTRA_A2DP_DEVICE_STATE,
+                BluetoothProfile.EXTRA_STATE,
                 BluetoothProfile.STATE_DISCONNECTED
             )
             val isA2dpConnected = when (action) {
-                AudioManager.ACTION_A2DP_DEVICE_CONNECTED ->
+                BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED ->
                     state == BluetoothProfile.STATE_CONNECTED
                 else -> true // ACL connected
             }
@@ -689,7 +690,7 @@ btProxy = chromahub.rhythm.app.util.BtCodecInfo.getCodec(this) { info ->
         // when Xiaomi/HyperOS auto-plays another music app on connect.
         try {
             val btConnectFilter = IntentFilter().apply {
-                addAction(AudioManager.ACTION_A2DP_DEVICE_CONNECTED)
+                addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
                 addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
             }
             androidx.core.content.ContextCompat.registerReceiver(

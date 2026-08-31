@@ -2021,7 +2021,7 @@ class MusicRepository(context: Context) {
                 val sortedSongs = albumSongs.sortedWith(
                     compareBy<Song> { if (it.trackNumber >= 1000) it.trackNumber / 1000 else it.discNumber.coerceAtLeast(1) }
                         .thenBy { if (it.trackNumber >= 1000) it.trackNumber % 1000 else it.trackNumber }
-                        .thenWith(NaturalSortComparator.comparator { it.title })
+                        .thenComparator { a, b -> NaturalSortComparator.compare(a.title, b.title) }
                 )
 
                 add(Album(

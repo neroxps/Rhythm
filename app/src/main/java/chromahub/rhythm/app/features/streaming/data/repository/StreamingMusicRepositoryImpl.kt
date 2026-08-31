@@ -683,7 +683,7 @@ class StreamingMusicRepositoryImpl(
                     // natural sort so chapter/episode numbers order correctly.
                     return mapped.sortedWith(
                         compareBy<StreamingSong> { it.trackNumber ?: Int.MAX_VALUE }
-                            .thenWith(NaturalSortComparator.comparator { it.title })
+                            .thenComparator { a, b -> NaturalSortComparator.compare(a.title, b.title) }
                     )
                 }
             } catch (e: Exception) {
