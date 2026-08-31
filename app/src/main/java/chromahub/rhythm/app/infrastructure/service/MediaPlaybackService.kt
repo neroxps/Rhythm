@@ -14,6 +14,8 @@ import android.widget.Toast
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.AudioMixerAttributes
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothProfile
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -223,6 +225,46 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
         val quality = info.quality?.let { " ($it)" } ?: ""
         val message = "Bluetooth Codec: $codecName, $sampleRate, $bits$quality"
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    /**
+     * Listens for Bluetooth A2DP device connections. On Xiaomi/HyperOS, connecting
+     * a Bluetooth device often makes the system auto-play the previously used music
+     * app, which steals audio focus and permanently pauses Rhythm. When we were
+     * playing before that focus loss, reclaim playback so Rhythm isn't squeezed out.
+     */
+    private val btConnectReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            val isConnect = when (action) {
+                AudioManager.ACTION_A2DP_DEVICE_CONNECTED -> true
+                BluetoothDevice.ACTION_ACL_CONNECTED -> true
+                else -> false
+            }
+            if (!isConnect) return
+
+            val state = intent.getIntExtra(
+                AudioManager.EXTRA_A2DP_DEVICE_STATE,
+                BluetoothProfile.STATE_DISCONNECTED
+            )
+            val isA2dpConnected = when (action) {
+                AudioManager.ACTION_A2DP_DEVICE_CONNECTED ->
+                    state == BluetoothProfile.STATE_CONNECTED
+                else -> true // ACL connected
+            }
+            if (!isA2dpConnected) return
+
+            Log.d(TAG, "Bluetooth device connected (${intent.getStringExtra(BluetoothDevice.EXTRA_NAME) ?: "unknown"})")
+            if (::rhythmPlayerEngine.isInitialized && rhythmPlayerEngine.wasPlayingBeforeFocusLoss()) {
+                Log.d(TAG, "Rhythm was playing before focus loss — reclaiming playback on Bluetooth connect")
+                serviceScope.launch {
+                    delay(1500) // Wait for the system to finish its own auto-play handshake
+                    if (::rhythmPlayerEngine.isInitialized) {
+                        rhythmPlayerEngine.resumeAfterFocusLoss()
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -641,6 +683,24 @@ btProxy = chromahub.rhythm.app.util.BtCodecInfo.getCodec(this) { info ->
 }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up Bluetooth codec monitoring", e)
+        }
+
+        // Listen for Bluetooth device connections so we can reclaim playback
+        // when Xiaomi/HyperOS auto-plays another music app on connect.
+        try {
+            val btConnectFilter = IntentFilter().apply {
+                addAction(AudioManager.ACTION_A2DP_DEVICE_CONNECTED)
+                addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            }
+            androidx.core.content.ContextCompat.registerReceiver(
+                this,
+                btConnectReceiver,
+                btConnectFilter,
+                androidx.core.content.ContextCompat.RECEIVER_EXPORTED
+            )
+            Log.d(TAG, "Bluetooth connect receiver registered")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error registering Bluetooth connect receiver", e)
         }
 
         try {
@@ -2260,6 +2320,9 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
             unregisterReceiver(btReceiver)
         } catch (_: Exception) {}
         btProxy = null
+        try {
+            unregisterReceiver(btConnectReceiver)
+        } catch (_: Exception) {}
         try {
             unregisterReceiver(volumeChangeReceiver)
         } catch (e: Exception) {

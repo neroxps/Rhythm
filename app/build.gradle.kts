@@ -180,13 +180,21 @@ android {
         }
     }
 
-    // ABI splits: create smaller per-architecture APKs (reduces size by ~5–10 MB each)
+    // ABI splits: create smaller per-architecture APKs (reduces size by ~5–10 MB each).
+    // Nightly builds only target arm64-v8a (pass -Pnightly=true); release builds keep
+    // the full ABI matrix plus a universal APK for IzzyOnDroid/F-Droid.
     splits {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
-            isUniversalApk = true // also keep a universal APK for IzzyOnDroid/F-Droid
+            val isNightly = project.findProperty("nightly")?.toString()?.toBoolean() == true
+            if (isNightly) {
+                include("arm64-v8a")
+                isUniversalApk = false
+            } else {
+                include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+                isUniversalApk = true // also keep a universal APK for IzzyOnDroid/F-Droid
+            }
         }
     }
 

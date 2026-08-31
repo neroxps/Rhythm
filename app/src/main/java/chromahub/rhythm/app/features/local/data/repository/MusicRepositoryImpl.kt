@@ -94,6 +94,7 @@ import chromahub.rhythm.app.util.EnhancedWord
 import chromahub.rhythm.app.util.RhythmLyricsParser
 import chromahub.rhythm.app.util.LrcUtils
 import chromahub.rhythm.app.util.SemanticLyrics
+import chromahub.rhythm.app.util.NaturalSortComparator
 import android.content.SharedPreferences
 import androidx.room.withTransaction
 import chromahub.rhythm.app.features.local.data.database.RhythmDatabase
@@ -2020,7 +2021,7 @@ class MusicRepository(context: Context) {
                 val sortedSongs = albumSongs.sortedWith(
                     compareBy<Song> { if (it.trackNumber >= 1000) it.trackNumber / 1000 else it.discNumber.coerceAtLeast(1) }
                         .thenBy { if (it.trackNumber >= 1000) it.trackNumber % 1000 else it.trackNumber }
-                        .thenBy { it.title.lowercase(Locale.ROOT) }
+                        .thenBy(NaturalSortComparator.comparator { it.title })
                 )
 
                 add(Album(

@@ -89,6 +89,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.sp
 import chromahub.rhythm.app.util.windowScreenWidthDp
 import chromahub.rhythm.app.util.windowScreenHeightDp
+import chromahub.rhythm.app.util.NaturalSortComparator
 
 private enum class AlbumSortOrder {
     TRACK_NUMBER,
@@ -125,7 +126,7 @@ private fun prepareAlbumSongDisplayState(
             aTrack > 0 && bTrack > 0 -> aTrack.compareTo(bTrack)
             aTrack > 0 -> -1
             bTrack > 0 -> 1
-            else -> a.title.compareTo(b.title, ignoreCase = true)
+            else -> NaturalSortComparator.compare(a.title, b.title)
         }
     }
 

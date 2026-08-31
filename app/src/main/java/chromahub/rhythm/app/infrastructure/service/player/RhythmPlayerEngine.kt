@@ -103,10 +103,17 @@ class RhythmPlayerEngine(
     private var audioFocusRequest: AudioFocusRequest? = null
     private var isFocusLossPause = false
 
+    // True when the player was actively playing when it lost audio focus permanently
+    // (e.g. another music app grabbed focus). Used to auto-resume when a Bluetooth
+    // device connects, so Rhythm isn't permanently squeezed out by other players.
+    @Volatile
+    private var wasPlayingBeforeFocusLoss = false
+
     private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS -> {
                 Log.d(TAG, "AudioFocus LOSS. Pausing both players.")
+                wasPlayingBeforeFocusLoss = playerA.playWhenReady
                 isFocusLossPause = false
                 playerA.playWhenReady = false
                 playerB.playWhenReady = false
@@ -282,6 +289,32 @@ class RhythmPlayerEngine(
         audioFocusRequest?.let {
             audioManager.abandonAudioFocusRequest(it)
             audioFocusRequest = null
+        }
+    }
+
+    /**
+     * True when playback was actively running before an audio focus loss
+     * (another app stole focus). Used to decide whether to auto-resume on
+     * Bluetooth connect.
+     */
+    fun wasPlayingBeforeFocusLoss(): Boolean = wasPlayingBeforeFocusLoss
+
+    /**
+     * Resumes playback after a permanent audio focus loss (e.g. another player
+     * grabbed focus). Re-requests focus and, if granted, restores playback.
+     * Used when a Bluetooth device connects so Rhythm reclaims playback.
+     */
+    fun resumeAfterFocusLoss() {
+        if (!wasPlayingBeforeFocusLoss) return
+        if (::playerA.isInitialized && playerA.playbackState != Player.STATE_IDLE) {
+            Log.d(TAG, "Attempting to resume playback after focus loss (Bluetooth reconnect)")
+            requestAudioFocus()
+            if (audioFocusRequest != null) {
+                wasPlayingBeforeFocusLoss = false
+                isFocusLossPause = false
+                playerA.playWhenReady = true
+                playerA.play()
+            }
         }
     }
 

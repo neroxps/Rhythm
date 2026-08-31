@@ -221,19 +221,19 @@ jobs:
         with:
           name: Rhythm-Nightly-Artifacts
           path: |
-            app/build/outputs/apk/github/release/Rhythm-*-githubRelease*.apk
-            app/build/outputs/apk/fdroid/release/Rhythm-*-fdroidRelease*.apk
+            app/build/outputs/apk/github/release/Rhythm-*-githubRelease-arm64-v8a.apk
+            app/build/outputs/apk/fdroid/release/Rhythm-*-fdroidRelease-arm64-v8a.apk
           retention-days: 30
 
       # ── Notifications ────────────────────────────────────────────────────────
 
-      - name: Locate universal Nightly APK
+      - name: Locate ARM64 Nightly APK
         if: success() && steps.check_version.outputs.should_run == 'true'
         id: find_apk
         run: |
-          APK_PATH=$(find app/build/outputs/apk/github/release -name "Rhythm-*-githubRelease.apk" ! -name "*-arm64-v8a.apk" ! -name "*-armeabi-v7a.apk" ! -name "*-x86_64.apk" ! -name "*-x86.apk" | head -n 1)
+          APK_PATH=$(find app/build/outputs/apk/github/release -name "Rhythm-*-githubRelease-arm64-v8a.apk" | head -n 1)
           if [ -z "$APK_PATH" ]; then
-            echo "No APK found — skipping notifications."
+            echo "No ARM64 APK found — skipping notifications."
             echo "path=" >> $GITHUB_OUTPUT
           else
             cp "$APK_PATH" /tmp/rhythm-nightly.apk
