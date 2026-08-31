@@ -971,6 +971,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var progressUpdateJob: Job? = null
     private var playbackWatchdogJob: Job? = null
 
+    // Last streaming progress reported to the provider (dedupe)
+    private var lastReportedStreamingPositionMs = -1L
+    private var lastReportedStreamingPaused = false
+
+    // Song for which a server-saved resume position has already been applied
+    private var resumePositionAppliedSongId: String? = null
+
     // Selected song for adding to playlist
     private val _selectedSongForPlaylist = MutableStateFlow<Song?>(null)
     val selectedSongForPlaylist: StateFlow<Song?> = _selectedSongForPlaylist.asStateFlow()
@@ -4274,14 +4281,50 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         progressUpdateJob = viewModelScope.launch {
             isPlaying.collectLatest { playing ->
                 if (playing) {
+                    var tickCount = 0
                     while (isActive) {
                         updateProgress()
+                        // Report streaming playback progress to the server roughly
+                        // every 10 seconds so Emby/Jellyfin can resume from here.
+                        tickCount++
+                        if (tickCount >= 100) { // 100 * 100ms = 10s
+                            tickCount = 0
+                            reportStreamingProgress(isPaused = false)
+                        }
                         delay(100) // Update every 100ms for smooth progress
                     }
                 } else {
                     // Update one last time when paused/stopped
                     updateProgress()
+                    reportStreamingProgress(isPaused = true)
                 }
+            }
+        }
+    }
+
+    /**
+     * Reports the current playback position of a streaming song to the provider
+     * (Jellyfin/Emby) so progress syncs and playback can resume from this point.
+     * Fire-and-forget: failures are logged and never affect playback.
+     */
+    private fun reportStreamingProgress(isPaused: Boolean) {
+        val song = _currentSong.value ?: return
+        val songId = song.id
+        if (!songId.startsWith("streaming://") && !songId.contains("::")) return
+
+        val controller = mediaController ?: return
+        val positionMs = controller.currentPosition.takeIf { it > 0 } ?: return
+        // Avoid spamming the server with the same position (e.g. paused at 0)
+        if (lastReportedStreamingPositionMs == positionMs && lastReportedStreamingPaused == isPaused) return
+
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val repository = chromahub.rhythm.app.features.streaming.di.StreamingMusicModule.provideStreamingMusicRepository(getApplication())
+                repository.reportPlaybackProgress(songId, positionMs, isPaused)
+                lastReportedStreamingPositionMs = positionMs
+                lastReportedStreamingPaused = isPaused
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to report streaming progress for song: $songId", e)
             }
         }
     }
@@ -5064,7 +5107,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             a.trackNumber > 0 && b.trackNumber > 0 -> a.trackNumber.compareTo(b.trackNumber)
             a.trackNumber > 0 -> -1
             b.trackNumber > 0 -> 1
-            else -> a.title.compareTo(b.title, ignoreCase = true)
+            else -> NaturalSortComparator.compare(a.title, b.title)
         }
     }
 
@@ -5176,6 +5219,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val now = System.currentTimeMillis()
         currentPlaybackSongId = songId
         currentPlaybackAccumulatedTime = 0L
+        // Reset streaming-report dedupe + resume markers for the new song
+        lastReportedStreamingPositionMs = -1L
+        lastReportedStreamingPaused = false
+        resumePositionAppliedSongId = null
         
         // Report playback start for streaming items
         if (songId.startsWith("streaming://") || songId.contains("::")) {
@@ -5183,6 +5230,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 try {
                     val repository = chromahub.rhythm.app.features.streaming.di.StreamingMusicModule.provideStreamingMusicRepository(getApplication())
                     repository.reportPlaybackStart(songId)
+                    // Resume from the server-saved position (audiobook chapters, etc.)
+                    applyStreamingResumePosition(songId, repository)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to scrobble playback start for song: $songId", e)
                 }
@@ -5200,6 +5249,36 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             currentPlaybackStartTime = 0L
             isCurrentlyPlaying = false
             Log.d(TAG, "Started playback tracking for song: $songId (not playing yet)")
+        }
+    }
+
+    /**
+     * Seeks a freshly started streaming song to the position the server saved for
+     * it (resume playback). Only applies while the track is still near the start
+     * and the user hasn't manually seeked yet, so it never overrides a manual skip.
+     */
+    private suspend fun applyStreamingResumePosition(
+        songId: String,
+        repository: chromahub.rhythm.app.features.streaming.domain.repository.StreamingMusicRepository
+    ) {
+        try {
+            val resumeMs = repository.getResumePosition(songId)
+            if (resumeMs <= 0L) return
+
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                val controller = mediaController ?: return@withContext
+                // Only apply if this song is still current and we're near the start
+                val currentId = controller.currentMediaItem?.mediaId ?: return@withContext
+                if (currentId != songId) return@withContext
+                if (controller.currentPosition > 5_000L) return@withContext
+                if (resumePositionAppliedSongId == songId) return@withContext
+
+                resumePositionAppliedSongId = songId
+                Log.d(TAG, "Resuming streaming song at ${resumeMs}ms (server-saved position)")
+                controller.seekTo(resumeMs)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to apply resume position for $songId", e)
         }
     }
     
@@ -5248,12 +5327,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     Log.d(TAG, "Song not found for finalization: $songId")
                 }
                 
-                // Report playback stop/scrobble for streaming items
+                // Report playback stop/scrobble for streaming items.
+                // Use the actual playback position (not accumulated listening time)
+                // so Emby/Jellyfin can resume from where the user really stopped.
                 if (songId.startsWith("streaming://") || songId.contains("::")) {
+                    val stopPositionMs = mediaController?.currentPosition?.takeIf { it > 0 } ?: actualDuration
                     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                         try {
                             val repository = chromahub.rhythm.app.features.streaming.di.StreamingMusicModule.provideStreamingMusicRepository(getApplication())
-                            repository.reportPlaybackStop(songId, actualDuration)
+                            repository.reportPlaybackStop(songId, stopPositionMs)
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to scrobble playback stop for song: $songId", e)
                         }

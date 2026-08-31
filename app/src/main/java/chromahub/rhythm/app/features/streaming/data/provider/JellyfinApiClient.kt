@@ -604,6 +604,58 @@ class JellyfinApiClient(context: Context) {
         ).map { true }
     }
 
+    /**
+     * Reports periodic playback progress so the server can track where the user
+     * is (e.g. an audiobook chapter) and resume from there on other clients.
+     */
+    suspend fun reportPlaybackProgress(itemId: String, positionTicks: Long, isPaused: Boolean = false): Result<Boolean> {
+        credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
+        if (itemId.isBlank()) return Result.failure(IllegalArgumentException("Item id is required"))
+
+        val bodyJson = JSONObject().apply {
+            put("ItemId", itemId)
+            put("PositionTicks", positionTicks.coerceAtLeast(0L))
+            put("PlayMethod", "DirectStream")
+            put("IsPaused", isPaused)
+        }
+
+        return request(
+            path = "/Sessions/Playing/Progress",
+            method = "POST",
+            body = bodyJson.toString().toRequestBody("application/json".toMediaType())
+        ).map { true }
+    }
+
+    /**
+     * Reads the server-side saved playback position (ticks) for an item, e.g. from
+     * UserData.PlaybackPositionTicks. Returns milliseconds. Returns 0 when the item
+     * was fully played (>=95%) or has no saved position, so playback restarts.
+     */
+    suspend fun getPlaybackPosition(itemId: String): Result<Long> {
+        val cred = credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
+        if (itemId.isBlank()) return Result.failure(IllegalArgumentException("Item id is required"))
+
+        val params = mapOf(
+            "Fields" to "UserData",
+            "enableUserData" to "true"
+        )
+
+        return requestJson("/Users/${cred.userId}/Items/$itemId", params).map { response ->
+            val userData = response.optJSONObject("UserData") ?: return@map 0L
+            val positionTicks = userData.optLong("PlaybackPositionTicks", 0L)
+            if (positionTicks <= 0L) return@map 0L
+
+            // If the item was essentially fully played, restart from the beginning.
+            val durationTicks = response.optLong("RunTimeTicks", 0L)
+            if (durationTicks > 0L) {
+                val playedFraction = positionTicks.toDouble() / durationTicks.toDouble()
+                if (playedFraction >= 0.95) return@map 0L
+            }
+
+            positionTicks / 10_000L // ticks -> ms
+        }
+    }
+
     fun buildStreamUrl(itemId: String, maxBitRateKbps: Int = 0): String? {
         val cred = credentials ?: return null
         if (itemId.isBlank()) return null

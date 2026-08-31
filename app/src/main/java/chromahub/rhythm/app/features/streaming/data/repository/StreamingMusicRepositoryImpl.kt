@@ -34,6 +34,7 @@ import chromahub.rhythm.app.network.DeezerApiService
 import android.net.Uri
 import kotlinx.coroutines.flow.Flow
 import chromahub.rhythm.app.util.ArtistSeparator
+import chromahub.rhythm.app.util.NaturalSortComparator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -551,6 +552,31 @@ class StreamingMusicRepositoryImpl(
         }
     }
 
+    override suspend fun reportPlaybackProgress(songId: String, positionMs: Long, isPaused: Boolean): Boolean {
+        val decoded = decodeSongId(songId) ?: return false
+        val (serviceId, providerId) = decoded
+        if (!isServiceConnected(serviceId)) return false
+
+        return when (serviceId) {
+            StreamingServiceId.JELLYFIN ->
+                jellyfinClient.reportPlaybackProgress(providerId, positionMs * 10_000L, isPaused).isSuccess
+            StreamingServiceId.SUBSONIC -> true // Subsonic scrobbles at the end only
+            else -> false
+        }
+    }
+
+    override suspend fun getResumePosition(songId: String): Long {
+        val decoded = decodeSongId(songId) ?: return 0L
+        val (serviceId, providerId) = decoded
+        if (!isServiceConnected(serviceId)) return 0L
+
+        return when (serviceId) {
+            StreamingServiceId.JELLYFIN ->
+                jellyfinClient.getPlaybackPosition(providerId).getOrDefault(0L)
+            else -> 0L
+        }
+    }
+
     /**
      * Invalidate cached streaming URL for a specific song.
      */
@@ -645,13 +671,20 @@ class StreamingMusicRepositoryImpl(
                     else -> null
                 }
                 if (!providerSongs.isNullOrEmpty()) {
-                    return providerSongs.mapNotNull { providerSong ->
+                    val mapped = providerSongs.mapNotNull { providerSong ->
                         try {
                             mapProviderSong(decodedId.serviceId, providerSong)
                         } catch (e: Exception) {
                             null
                         }
                     }
+                    // Server-side sort (SortName) is lexicographic; when track numbers are
+                    // missing (e.g. audiobook chapters named "第1000集"), fall back to a
+                    // natural sort so chapter/episode numbers order correctly.
+                    return mapped.sortedWith(
+                        compareBy<StreamingSong> { it.trackNumber ?: Int.MAX_VALUE }
+                            .thenBy(NaturalSortComparator.comparator { it.title })
+                    )
                 }
             } catch (e: Exception) {
                 Log.w("StreamingMusicRepo", "Network getAlbumSongs failed for album $albumId, falling back to offline", e)

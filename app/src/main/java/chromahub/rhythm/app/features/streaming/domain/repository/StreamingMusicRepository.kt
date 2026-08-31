@@ -247,4 +247,15 @@ interface StreamingMusicRepository : MusicRepository {
      * Report that playback has stopped (scrobbling)
      */
     suspend fun reportPlaybackStop(songId: String, positionMs: Long): Boolean
+
+    /**
+     * Report periodic playback progress so the server can track/resume position.
+     */
+    suspend fun reportPlaybackProgress(songId: String, positionMs: Long, isPaused: Boolean = false): Boolean
+
+    /**
+     * Get the server-side saved resume position (ms) for a streaming song.
+     * Returns 0 when there is none (start from the beginning).
+     */
+    suspend fun getResumePosition(songId: String): Long
 }
