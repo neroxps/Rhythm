@@ -587,7 +587,7 @@ class JellyfinApiClient(context: Context) {
         ).map { true }
     }
 
-    suspend fun reportPlaybackStop(itemId: String, positionTicks: Long): Result<Boolean> {
+    suspend fun reportPlaybackStop(itemId: String, positionTicks: Long, playedToCompletion: Boolean = false): Result<Boolean> {
         credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
         if (itemId.isBlank()) return Result.failure(IllegalArgumentException("Item id is required"))
 
@@ -595,6 +595,9 @@ class JellyfinApiClient(context: Context) {
             put("ItemId", itemId)
             put("PositionTicks", positionTicks)
             put("PlayMethod", "DirectStream")
+            if (playedToCompletion) {
+                put("PlayedToCompletion", true)
+            }
         }
 
         return request(

@@ -245,8 +245,9 @@ interface StreamingMusicRepository : MusicRepository {
 
     /**
      * Report that playback has stopped (scrobbling)
+     * @param playedToCompletion true when the track was played to its end
      */
-    suspend fun reportPlaybackStop(songId: String, positionMs: Long): Boolean
+    suspend fun reportPlaybackStop(songId: String, positionMs: Long, playedToCompletion: Boolean = false): Boolean
 
     /**
      * Report periodic playback progress so the server can track/resume position.

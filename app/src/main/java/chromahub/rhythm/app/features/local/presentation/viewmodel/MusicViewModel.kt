@@ -978,6 +978,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     // Song for which a server-saved resume position has already been applied
     private var resumePositionAppliedSongId: String? = null
 
+    // Playback position captured when the previous track reached STATE_ENDED
+    // (i.e. it played to completion). Used when reporting the stop position so
+    // Emby/Jellyfin records the track as actually finished.
+    private var lastCompletedPlaybackPositionMs = -1L
+
     // Selected song for adding to playlist
     private val _selectedSongForPlaylist = MutableStateFlow<Song?>(null)
     val selectedSongForPlaylist: StateFlow<Song?> = _selectedSongForPlaylist.asStateFlow()
@@ -4096,6 +4101,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     _progress.value = 1.0f
                     progressUpdateJob?.cancel()
                     Log.d(TAG, "Playback completed")
+
+                    // Capture the completed position BEFORE the next track starts,
+                    // so finalizePlaybackTracking can report it as played-to-completion.
+                    val endedPosition = controller.currentPosition.takeIf { it > 0 }
+                        ?: controller.duration.takeIf { it > 0 }
+                    if (endedPosition != null) {
+                        lastCompletedPlaybackPositionMs = endedPosition
+                        Log.d(TAG, "Captured completed position: ${endedPosition}ms")
+                    }
                     
                     // If repeat mode is off and we're at the end of the queue, stop playback
                     if (controller.repeatMode == Player.REPEAT_MODE_OFF && 
@@ -5331,11 +5345,21 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // Use the actual playback position (not accumulated listening time)
                 // so Emby/Jellyfin can resume from where the user really stopped.
                 if (songId.startsWith("streaming://") || songId.contains("::")) {
-                    val stopPositionMs = mediaController?.currentPosition?.takeIf { it > 0 } ?: actualDuration
+                    // Prefer the captured completion position when the track played to
+                    // the end; otherwise fall back to the controller position (which may
+                    // already point at the next track during auto-advance, hence the
+                    // completion capture above) and finally the accumulated duration.
+                    val playedToCompletion = lastCompletedPlaybackPositionMs > 0
+                    val stopPositionMs = if (playedToCompletion) {
+                        lastCompletedPlaybackPositionMs
+                    } else {
+                        mediaController?.currentPosition?.takeIf { it > 0 } ?: actualDuration
+                    }
+                    lastCompletedPlaybackPositionMs = -1L
                     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                         try {
                             val repository = chromahub.rhythm.app.features.streaming.di.StreamingMusicModule.provideStreamingMusicRepository(getApplication())
-                            repository.reportPlaybackStop(songId, stopPositionMs)
+                            repository.reportPlaybackStop(songId, stopPositionMs, playedToCompletion)
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to scrobble playback stop for song: $songId", e)
                         }

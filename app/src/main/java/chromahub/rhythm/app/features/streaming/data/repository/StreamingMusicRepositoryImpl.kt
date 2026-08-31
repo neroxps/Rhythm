@@ -540,13 +540,14 @@ class StreamingMusicRepositoryImpl(
         }
     }
 
-    override suspend fun reportPlaybackStop(songId: String, positionMs: Long): Boolean {
+    override suspend fun reportPlaybackStop(songId: String, positionMs: Long, playedToCompletion: Boolean): Boolean {
         val decoded = decodeSongId(songId) ?: return false
         val (serviceId, providerId) = decoded
         if (!isServiceConnected(serviceId)) return false
         
         return when (serviceId) {
-            StreamingServiceId.JELLYFIN -> jellyfinClient.reportPlaybackStop(providerId, positionMs * 10_000L).isSuccess // Convert ms to ticks
+            StreamingServiceId.JELLYFIN ->
+                jellyfinClient.reportPlaybackStop(providerId, positionMs * 10_000L, playedToCompletion).isSuccess // Convert ms to ticks
             StreamingServiceId.SUBSONIC -> subsonicClient.scrobble(providerId, true).isSuccess
             else -> false
         }
