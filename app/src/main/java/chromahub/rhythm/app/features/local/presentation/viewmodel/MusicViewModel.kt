@@ -983,6 +983,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     // Emby/Jellyfin records the track as actually finished.
     private var lastCompletedPlaybackPositionMs = -1L
 
+    // Last known playback position of the CURRENT streaming song, updated by the
+    // progress loop. Survives crossfade transitions that skip STATE_ENDED, so
+    // finalizePlaybackTracking can still report where the previous track ended.
+    private var lastKnownStreamingPositionMs = -1L
+
     // Selected song for adding to playlist
     private val _selectedSongForPlaylist = MutableStateFlow<Song?>(null)
     val selectedSongForPlaylist: StateFlow<Song?> = _selectedSongForPlaylist.asStateFlow()
@@ -4349,6 +4354,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             if (playbackDuration > 0) {
                 val currentProgress = controller.currentPosition.toFloat() / playbackDuration.toFloat()
                 _progress.value = currentProgress.coerceIn(0f, 1f)
+                // Track the current position so finalizePlaybackTracking can report
+                // where this song actually ended even when a crossfade transition
+                // skips STATE_ENDED (the controller already points at the next track).
+                if (currentPlaybackSongId != null &&
+                    (currentPlaybackSongId!!.startsWith("streaming://") || currentPlaybackSongId!!.contains("::"))
+                ) {
+                    lastKnownStreamingPositionMs = controller.currentPosition
+                }
             }
 
             maybeBroadcastBluetoothLyricsLine(controller)
@@ -5237,6 +5250,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         lastReportedStreamingPositionMs = -1L
         lastReportedStreamingPaused = false
         resumePositionAppliedSongId = null
+        lastKnownStreamingPositionMs = -1L
         
         // Report playback start for streaming items
         if (songId.startsWith("streaming://") || songId.contains("::")) {
@@ -5346,16 +5360,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // so Emby/Jellyfin can resume from where the user really stopped.
                 if (songId.startsWith("streaming://") || songId.contains("::")) {
                     // Prefer the captured completion position when the track played to
-                    // the end; otherwise fall back to the controller position (which may
-                    // already point at the next track during auto-advance, hence the
-                    // completion capture above) and finally the accumulated duration.
-                    val playedToCompletion = lastCompletedPlaybackPositionMs > 0
-                    val stopPositionMs = if (playedToCompletion) {
-                        lastCompletedPlaybackPositionMs
-                    } else {
-                        mediaController?.currentPosition?.takeIf { it > 0 } ?: actualDuration
+                    // the end; otherwise fall back to the last known position of this
+                    // song (the controller may already point at the next track during
+                    // crossfade auto-advance, so the live position is useless), and
+                    // finally the accumulated duration.
+                    val songDuration = _currentSong.value?.duration?.takeIf { it > 0 }
+                    val playedToCompletion = lastCompletedPlaybackPositionMs > 0 ||
+                        (songDuration != null && lastKnownStreamingPositionMs >= songDuration * 0.95)
+                    val stopPositionMs = when {
+                        lastCompletedPlaybackPositionMs > 0 -> lastCompletedPlaybackPositionMs
+                        lastKnownStreamingPositionMs > 0 -> lastKnownStreamingPositionMs
+                        else -> mediaController?.currentPosition?.takeIf { it > 0 } ?: actualDuration
                     }
                     lastCompletedPlaybackPositionMs = -1L
+                    Log.d(TAG, "Reporting streaming stop for $songId at ${stopPositionMs}ms (completed=$playedToCompletion)")
                     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                         try {
                             val repository = chromahub.rhythm.app.features.streaming.di.StreamingMusicModule.provideStreamingMusicRepository(getApplication())
