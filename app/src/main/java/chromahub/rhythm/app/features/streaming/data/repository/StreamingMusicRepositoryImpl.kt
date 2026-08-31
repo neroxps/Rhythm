@@ -572,7 +572,7 @@ class StreamingMusicRepositoryImpl(
 
         return when (serviceId) {
             StreamingServiceId.JELLYFIN ->
-                jellyfinClient.getPlaybackPosition(providerId).getOrDefault(0L)
+                jellyfinClient.getPlaybackPosition(providerId).getOrNull() ?: 0L
             else -> 0L
         }
     }
