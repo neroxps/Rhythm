@@ -36,9 +36,18 @@ jobs:
         run: |
           mkdir -p config/signing
           mkdir -p .config
-          printf '%s' "$SIGNING_KEYSTORE" | base64 -di > ./config/signing/rhythm_keystore.jks
-          printf '%s' "$SIGNING_PROPERTIES" | base64 -di > ./.config/keystore.properties
-          printf '%s' "$PRIVATE_PROPERTIES" | base64 -di > ./config/signing/private.properties
+          # Decode keystore and signing property files if secrets are available
+          if [ -n "$SIGNING_KEYSTORE" ]; then
+            printf '%s' "$SIGNING_KEYSTORE" | base64 -di > ./config/signing/rhythm_keystore.jks
+          fi
+          if [ -n "$SIGNING_PROPERTIES" ]; then
+            printf '%s' "$SIGNING_PROPERTIES" | base64 -di > ./.config/keystore.properties
+          fi
+          if [ -n "$PRIVATE_PROPERTIES" ]; then
+            printf '%s' "$PRIVATE_PROPERTIES" | base64 -di > ./config/signing/private.properties
+          else
+            touch ./config/signing/private.properties
+          fi
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
