@@ -20,3 +20,14 @@ private.properties.base64
 
 /app/release
 /.config
+/tmp/
+*.apk
+*.jks
+*.p12
+*.pem
+*.key
+*.pfx
+*.cer
+*.crt
+/secrets/
+*.env
