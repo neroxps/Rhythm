@@ -17,6 +17,8 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import org.json.JSONArray
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import androidx.core.content.edit
 
@@ -571,13 +573,30 @@ class JellyfinApiClient(context: Context) {
         ).map { true }
     }
 
+    /**
+     * PlaySessionId shared by Playing/Progress/Stopped reports for one playback
+     * session. Emby 4.9 requires it in the request body (400 "key" otherwise),
+     * and it keeps all three reports associated with the same server session.
+     */
+    @Volatile
+    private var activePlaySessionId: String? = null
+
     suspend fun reportPlaybackStart(itemId: String): Result<Boolean> {
         credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
         if (itemId.isBlank()) return Result.failure(IllegalArgumentException("Item id is required"))
 
+        val sessionId = activePlaySessionId ?: UUID.randomUUID().toString().also { activePlaySessionId = it }
+
         val bodyJson = JSONObject().apply {
             put("ItemId", itemId)
+            put("MediaSourceId", itemId)
             put("PlayMethod", "DirectStream") // We use direct stream, not transcoding typically
+            put("PositionTicks", 0L)
+            put("CanSeek", true)
+            put("IsPaused", false)
+            put("IsMuted", false)
+            put("PlaySessionId", sessionId)
+            put("QueueableMediaTypes", JSONArray().put("Audio"))
         }
 
         return request(
@@ -591,14 +610,24 @@ class JellyfinApiClient(context: Context) {
         credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
         if (itemId.isBlank()) return Result.failure(IllegalArgumentException("Item id is required"))
 
+        val sessionId = activePlaySessionId
+
         val bodyJson = JSONObject().apply {
             put("ItemId", itemId)
+            put("MediaSourceId", itemId)
             put("PositionTicks", positionTicks)
             put("PlayMethod", "DirectStream")
+            put("CanSeek", true)
+            put("IsPaused", false)
+            put("IsMuted", false)
             if (playedToCompletion) {
                 put("PlayedToCompletion", true)
             }
+            sessionId?.let { put("PlaySessionId", it) }
         }
+
+        // Playback session is over; reset so the next track starts a fresh session.
+        activePlaySessionId = null
 
         return request(
             path = "/Sessions/Playing/Stopped",
@@ -615,11 +644,17 @@ class JellyfinApiClient(context: Context) {
         credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
         if (itemId.isBlank()) return Result.failure(IllegalArgumentException("Item id is required"))
 
+        val sessionId = activePlaySessionId
+
         val bodyJson = JSONObject().apply {
             put("ItemId", itemId)
+            put("MediaSourceId", itemId)
             put("PositionTicks", positionTicks.coerceAtLeast(0L))
             put("PlayMethod", "DirectStream")
+            put("CanSeek", true)
             put("IsPaused", isPaused)
+            put("IsMuted", false)
+            sessionId?.let { put("PlaySessionId", it) }
         }
 
         return request(
@@ -739,6 +774,11 @@ class JellyfinApiClient(context: Context) {
                 params.forEach { (key, value) ->
                     urlBuilder.addQueryParameter(key, value)
                 }
+                // Emby also accepts (and sometimes requires) the API key as a query
+                // parameter — same as buildStreamUrl uses. Adding it here makes the
+                // playback-report endpoints (Playing/Progress, Playing/Stopped) work
+                // against servers that reject the MediaBrowser Authorization header.
+                urlBuilder.addQueryParameter("api_key", cred.accessToken)
 
                 val requestBuilder = Request.Builder()
                     .url(urlBuilder.build())
@@ -761,6 +801,7 @@ class JellyfinApiClient(context: Context) {
                 okHttpClient.newCall(request).execute().use { response ->
                     val body = response.body.string()
                     if (!response.isSuccessful) {
+                        Log.w(TAG, "Jellyfin request failed: $method $path -> HTTP ${response.code}: ${response.message} (body: ${body.take(200)})")
                         return@withContext Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
                     }
                     Result.success(body)
