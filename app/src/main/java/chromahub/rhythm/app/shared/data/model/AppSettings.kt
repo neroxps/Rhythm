@@ -664,7 +664,7 @@ class AppSettings private constructor(context: Context) {
     private val _gaplessPlayback = MutableStateFlow(prefs.getBoolean(KEY_GAPLESS_PLAYBACK, true))
     val gaplessPlayback: StateFlow<Boolean> = _gaplessPlayback.asStateFlow()
     
-    private val _resumeOnDeviceReconnect = MutableStateFlow(prefs.getBoolean(KEY_RESUME_ON_DEVICE_RECONNECT, false))
+    private val _resumeOnDeviceReconnect = MutableStateFlow(prefs.getBoolean(KEY_RESUME_ON_DEVICE_RECONNECT, true))
     val resumeOnDeviceReconnect: StateFlow<Boolean> = _resumeOnDeviceReconnect.asStateFlow()
     
     private val _crossfade = MutableStateFlow(prefs.getBoolean(KEY_CROSSFADE, true))
