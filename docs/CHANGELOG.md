@@ -8,7 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- 
+- Emby/Jellyfin audiobook (book) mode: books play sequentially without shuffle, chapters ordered by server ParentIndexNumber/IndexNumber, and playback resumes from the saved server per-item UserData position.
+- "Continue listening" card on the streaming home for the last audiobook session, reopening the book at the saved chapter and offset.
+- Automatic streaming recovery: when a network interruption breaks playback (Source error), the player invalidates the stale URL, resolves a fresh one, seeks back to the interruption point and resumes — up to 3 attempts (1s/2s/4s backoff).
+- Detailed playback failure dialog: error code name, HTTP/source cause chain, attempt count, Retry action, and one-tap log export.
+- App-level diagnostics log directory (filesDir/logs) with 5 MB rolling files, a 30 MB total cap, and credential redaction (api_key, Tokens, passwords, bearer tokens, Subsonic auth params) before anything is written.
+- GitHub Actions JVM unit-test job (testGithubDebugUnitTest) covering book-type detection, chapter ordering, resume-target selection, recovery policy, and log-budget/redaction rules.
+
+### Changed
+- Version bump to 5.5.480.1260 baseline (aligned with upstream cromaguy/Rhythm main).
 
 ## [5.5.480.1260] - 2026-09-06
 
