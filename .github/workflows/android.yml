@@ -86,7 +86,11 @@ jobs:
     - name: Build with Gradle (GitHub flavor only)
       env:
         APPLE_MUSIC_FALLBACK_TOKEN: ${{ secrets.APPLE_MUSIC_FALLBACK_TOKEN }}
-      run: ./gradlew assembleGithubRelease assembleGithubDebug assembleBetaRelease
+      run: |
+        # GitHub flavor: full ABI matrix + universal (release distribution).
+        ./gradlew assembleGithubRelease assembleGithubDebug
+        # Beta flavor: arm64-v8a only (test build for the user's device) - much smaller artifact.
+        ./gradlew assembleBetaRelease -Pnightly=true
 
     - name: Generate build info
       if: github.event_name == 'pull_request'

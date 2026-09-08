@@ -6017,6 +6017,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             Log.d(TAG, "Set shuffle mode to $resolvedShuffle before building queue (useExoPlayerShuffle=$useExoPlayerShuffle)")
                         }
                         
+                        // Add all media items at once
+                        controller.addMediaItems(mediaItems)
+                        
                         // Prepare BEFORE setting queue state for better sync
                         controller.prepare()
                         
