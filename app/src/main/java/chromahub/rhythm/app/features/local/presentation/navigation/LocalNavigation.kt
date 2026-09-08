@@ -962,6 +962,7 @@ private fun LocalNavigationContent(
 
     val streamingIsLoading by streamingMusicViewModel.isLoading.collectAsState()
     val streamingError by streamingMusicViewModel.error.collectAsState()
+    val streamingBookSessions by streamingMusicViewModel.lastBookSessions.collectAsState()
     val selectedStreamingService by appSettings.streamingService.collectAsState()
     val streamingServiceId = remember(selectedStreamingService) {
         StreamingServiceOptions.defaults.firstOrNull { it.id == selectedStreamingService }?.id
@@ -2058,6 +2059,13 @@ private fun LocalNavigationContent(
                             },
                             onStreamingShuffleQueue = { queue ->
                                 streamingMusicViewModel.playQueue(queue, 0, true)
+                            },
+                            streamingBookSessions = streamingBookSessions,
+                            onStreamingResumeBook = { session ->
+                                streamingMusicViewModel.resumeBook(session)
+                            },
+                            onStreamingDismissBook = { bookId ->
+                                streamingMusicViewModel.dismissBookSession(bookId)
                             }
                         )
                 }
@@ -2597,6 +2605,7 @@ private fun LocalNavigationContent(
                             }
                         },
                         isStreamingMode = true,
+                        hideShuffle = albumSongs.any { it.isBookType() },
                         favoriteSongs = streamingLikedSongIds,
                         onShowSongInfo = { song ->
                             selectedSongForInfo = song

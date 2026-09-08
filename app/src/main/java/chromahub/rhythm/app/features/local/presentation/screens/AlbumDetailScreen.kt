@@ -212,6 +212,8 @@ fun AlbumDetailScreen(
         onComplete: (successCount: Int, failCount: Int) -> Unit
     ) -> Unit)? = null,
     isStreamingMode: Boolean = false,
+    /** Hid the shuffle button — used for audiobook (book mode) playback. */
+    hideShuffle: Boolean = false,
     viewModel: MusicViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -581,25 +583,27 @@ fun AlbumDetailScreen(
                                     },
                                     height = 50.dp,
                                     isFirst = true,
-                                    isLast = false,
+                                    isLast = hideShuffle,
                                     icon = RhythmIcons.Play,
                                     text = stringResource(R.string.action_play_all),
                                     fontWeight = FontWeight.Bold
                                 )
 
-                                RhythmDetailActionButton(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
-                                        onShufflePlay(displaySongs)
-                                    },
-                                    height = 50.dp,
-                                    type = RhythmButtonType.Tonal,
-                                    isFirst = false,
-                                    isLast = true,
-                                    icon = RhythmIcons.Shuffle,
-                                    text = stringResource(R.string.action_shuffle),
-                                    fontWeight = FontWeight.Medium
-                                )
+                                if (!hideShuffle) {
+                                    RhythmDetailActionButton(
+                                        onClick = {
+                                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                            onShufflePlay(displaySongs)
+                                        },
+                                        height = 50.dp,
+                                        type = RhythmButtonType.Tonal,
+                                        isFirst = false,
+                                        isLast = true,
+                                        icon = RhythmIcons.Shuffle,
+                                        text = stringResource(R.string.action_shuffle),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
                             }
                         }
                     }
@@ -1030,25 +1034,27 @@ fun AlbumDetailScreen(
                                                 },
                                                 height = 52.dp,
                                                 isFirst = true,
-                                                isLast = false,
+                                                isLast = hideShuffle,
                                                 icon = RhythmIcons.Play,
                                                 text = stringResource(R.string.action_play_all),
                                                 fontWeight = FontWeight.Bold
                                             )
 
-                                            RhythmDetailActionButton(
-                                                onClick = {
-                                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
-                                                    onShufflePlay(displaySongs)
-                                                },
-                                                height = 52.dp,
-                                                type = RhythmButtonType.Tonal,
-                                                isFirst = false,
-                                                isLast = true,
-                                                icon = RhythmIcons.Shuffle,
-                                                text = stringResource(R.string.action_shuffle),
-                                                fontWeight = FontWeight.Medium
-                                            )
+                                            if (!hideShuffle) {
+                                                RhythmDetailActionButton(
+                                                    onClick = {
+                                                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                                        onShufflePlay(displaySongs)
+                                                    },
+                                                    height = 52.dp,
+                                                    type = RhythmButtonType.Tonal,
+                                                    isFirst = false,
+                                                    isLast = true,
+                                                    icon = RhythmIcons.Shuffle,
+                                                    text = stringResource(R.string.action_shuffle),
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
                                         }
 
                                         FilledTonalButton(

@@ -10,4 +10,8 @@
     
     <!-- External cache directory -->
     <external-cache-path name="external_cache" path="." />
+
+    <!-- App-internal files (playback diagnostics logs: filesDir/logs) -->
+    <files-path name="app_logs" path="logs/" />
+    <files-path name="app_internal" path="." />
 </paths> 

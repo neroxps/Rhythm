@@ -291,7 +291,10 @@ fun HomeScreen(
     onStreamingNavigateToAlbum: (chromahub.rhythm.app.features.streaming.domain.model.StreamingAlbum) -> Unit = {},
     onStreamingNavigateToPlaylist: (chromahub.rhythm.app.features.streaming.domain.model.StreamingPlaylist) -> Unit = {},
     onStreamingPlayQueue: (List<chromahub.rhythm.app.features.streaming.domain.model.StreamingSong>, Int, Boolean) -> Unit = { _, _, _ -> },
-    onStreamingShuffleQueue: (List<chromahub.rhythm.app.features.streaming.domain.model.StreamingSong>) -> Unit = {}
+    onStreamingShuffleQueue: (List<chromahub.rhythm.app.features.streaming.domain.model.StreamingSong>) -> Unit = {},
+    streamingBookSessions: List<chromahub.rhythm.app.features.streaming.data.store.BookSessionStore.BookSession> = emptyList(),
+    onStreamingResumeBook: (chromahub.rhythm.app.features.streaming.data.store.BookSessionStore.BookSession) -> Unit = {},
+    onStreamingDismissBook: (String) -> Unit = {}
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val coroutineScope = rememberCoroutineScope()
@@ -642,7 +645,10 @@ fun HomeScreen(
                 onRefresh = {
                     streamingIsRefreshing = true
                     streamingViewModel?.refreshHome()
-                }
+                },
+                bookSessions = streamingBookSessions,
+                onResumeBook = onStreamingResumeBook,
+                onDismissBook = onStreamingDismissBook
             )
         } else {
             ModernScrollableContent(
@@ -718,7 +724,10 @@ private fun StreamingHomeBody(
     musicViewModel: chromahub.rhythm.app.viewmodel.MusicViewModel,
     coroutineScope: CoroutineScope,
     isRefreshing: Boolean = false,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    bookSessions: List<chromahub.rhythm.app.features.streaming.data.store.BookSessionStore.BookSession> = emptyList(),
+    onResumeBook: (chromahub.rhythm.app.features.streaming.data.store.BookSessionStore.BookSession) -> Unit = {},
+    onDismissBook: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val windowSizeClass = calculateWindowSizeClass(context as android.app.Activity)
@@ -992,6 +1001,16 @@ private fun StreamingHomeBody(
                 subtitle = context.getString(R.string.streaming_home_widget_empty_hint),
                 actionText = context.getString(R.string.streaming_service_setup_reconnect),
                 onAction = { onConfigureService(serviceName) }
+            )
+        }
+
+        // Audiobook "Continue listening" card (book mode).
+        if (bookSessions.isNotEmpty()) {
+            ContinueListeningBookCard(
+                bookSessions = bookSessions,
+                onResume = onResumeBook,
+                onDismiss = onDismissBook,
+                widthSizeClass = widthSizeClass
             )
         }
 
@@ -1352,6 +1371,100 @@ private fun StreamingHomeWelcomeContent(
 
         item {
             Spacer(modifier = Modifier.height(18.dp))
+        }
+    }
+}
+
+/**
+ * "Continue listening" card for audiobook (book mode) sessions.
+ * Shown on the streaming home screen; tapping resumes the book from the
+ * server-saved chapter and position.
+ */
+@Composable
+private fun ContinueListeningBookCard(
+    bookSessions: List<chromahub.rhythm.app.features.streaming.data.store.BookSessionStore.BookSession>,
+    onResume: (chromahub.rhythm.app.features.streaming.data.store.BookSessionStore.BookSession) -> Unit,
+    onDismiss: (String) -> Unit,
+    widthSizeClass: WindowWidthSizeClass
+) {
+    val session = bookSessions.firstOrNull() ?: return
+    val chapterLabel = if (session.chapterIndex > 0) {
+        stringResource(R.string.bookmode_continue_listening_desc, session.title, session.chapterIndex + 1)
+    } else {
+        stringResource(R.string.bookmode_continue_listening)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = if (widthSizeClass == WindowWidthSizeClass.Compact) 16.dp else 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.bookmode_continue_listening),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        ElevatedCard(
+            onClick = { onResume(session) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AsyncImage(
+                    model = session.artworkUrl,
+                    contentDescription = session.title,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = session.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = chapterLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    if (session.author.isNotBlank()) {
+                        Text(
+                            text = session.author,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(onClick = { onResume(session) }) {
+                    Icon(
+                        imageVector = MaterialSymbolIcon("play_circle", filled = true),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(onClick = { onDismiss(session.bookId) }) {
+                    Icon(
+                        imageVector = MaterialSymbolIcon("close", filled = true),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }

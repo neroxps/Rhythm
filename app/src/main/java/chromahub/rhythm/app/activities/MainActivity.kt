@@ -140,6 +140,7 @@ import chromahub.rhythm.app.shared.presentation.components.common.Initialization
 import chromahub.rhythm.app.shared.presentation.components.PermissionHandler
 import chromahub.rhythm.app.shared.presentation.components.dialogs.BetaProgramPopup
 import chromahub.rhythm.app.shared.presentation.components.dialogs.TrackCorruptionDialog
+import chromahub.rhythm.app.infrastructure.service.player.StreamingRecoveryController
 import chromahub.rhythm.app.features.local.presentation.screens.OnboardingScreen
 import chromahub.rhythm.app.features.local.presentation.screens.onboarding.OnboardingStep
 import chromahub.rhythm.app.features.local.presentation.screens.onboarding.PermissionScreenState
@@ -444,13 +445,26 @@ class MainActivity : AppCompatActivity() {
                         val showCorruptionDialog by musicViewModel.showCorruptionDialog.collectAsState()
                         val corruptedTrackName by musicViewModel.corruptedTrackName.collectAsState()
                         val corruptedTrackMessage by musicViewModel.corruptedTrackMessage.collectAsState()
+                        val playbackFailure by musicViewModel.playbackFailure.collectAsState()
 
                         if (showCorruptionDialog) {
                             TrackCorruptionDialog(
                                 onDismiss = { musicViewModel.dismissCorruptionDialog() },
                                 onSkip = { musicViewModel.skipToNext() },
                                 trackName = corruptedTrackName,
-                                errorMessage = corruptedTrackMessage
+                                errorMessage = corruptedTrackMessage,
+                                errorDetail = playbackFailure?.let {
+                                    buildString {
+                                        append("code=").append(it.errorCodeName)
+                                            .append(" (").append(it.errorCode).append(")\n")
+                                        append("message=").append(it.errorMessage).append("\n")
+                                        append("cause=").append(it.causeChain).append("\n")
+                                        append("attempts=").append(it.attemptCount).append("/")
+                                            .append(StreamingRecoveryController.MAX_ATTEMPTS)
+                                    }
+                                },
+                                onRetry = { musicViewModel.retryFailedStreaming() },
+                                showCopyAndExport = playbackFailure != null
                             )
                         }
 

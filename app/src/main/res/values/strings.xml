@@ -2867,6 +2867,12 @@
     <string name="widget_stats_gem_sessions_desc">Total listening sessions in this period</string>
     <string name="mirror_changes_across_both">Mirror changes across both</string>
     <string name="current_speed_value">Current speed: %1$s</string>
+    <!-- Playback recovery / audiobook (book mode) -->
+    <string name="trackcorruptiondialog_retry">Retry</string>
+    <string name="trackcorruptiondialog_export_log">Export Log</string>
+    <string name="bookmode_continue_listening">Continue listening</string>
+    <string name="bookmode_continue_listening_desc">Continue «%1$s» — Chapter %2$d</string>
+    <string name="bookmode_resume_offline">Server unreachable. Playing from the beginning; progress will sync when reconnected.</string>
     <string name="add_to_playlist_named">Add to %1$s</string>
     <string name="released_on">Released: %1$s</string>
     <!-- Widget content descriptions -->

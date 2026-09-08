@@ -54,6 +54,9 @@ import chromahub.rhythm.app.shared.data.model.Queue
 import chromahub.rhythm.app.shared.data.model.Song
 import chromahub.rhythm.app.shared.data.model.FolderNode
 import chromahub.rhythm.app.infrastructure.service.MediaPlaybackService
+import chromahub.rhythm.app.infrastructure.service.player.PlaybackErrorCenter
+import chromahub.rhythm.app.infrastructure.service.player.StreamingRecoveryController
+import chromahub.rhythm.app.infrastructure.service.player.StreamingRecoveryPolicy
 import chromahub.rhythm.app.infrastructure.widget.WidgetUpdater
 import chromahub.rhythm.app.util.AudioDeviceManager
 import chromahub.rhythm.app.util.EqualizerUtils
@@ -899,9 +902,59 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _corruptedTrackMessage = MutableStateFlow("")
     val corruptedTrackMessage: StateFlow<String> = _corruptedTrackMessage.asStateFlow()
 
+    // Detailed playback failure from the recovery controller (streaming 断流).
+    private val _playbackFailure = MutableStateFlow<PlaybackErrorCenter.PlaybackFailure?>(null)
+    val playbackFailure: StateFlow<PlaybackErrorCenter.PlaybackFailure?> = _playbackFailure.asStateFlow()
+
+    private val _recoveryRetrying = MutableStateFlow(false)
+    val recoveryRetrying: StateFlow<Boolean> = _recoveryRetrying.asStateFlow()
+
+    /** True while the current queue is an audiobook (sequential playback). */
+    private val _isAudiobookQueue = MutableStateFlow(false)
+    val isAudiobookQueue: StateFlow<Boolean> = _isAudiobookQueue.asStateFlow()
+
     fun dismissCorruptionDialog() {
         _showCorruptionDialog.value = false
         _corruptedTrackMessage.value = ""
+        _playbackFailure.value = null
+    }
+
+    /**
+     * Request the playback service to retry the failed streaming track.
+     * Falls back to a simple pause+play when the service isn't reachable.
+     */
+    fun retryFailedStreaming() {
+        _showCorruptionDialog.value = false
+        _playbackFailure.value = null
+        viewModelScope.launch {
+            mediaController?.let { controller ->
+                try {
+                    controller.play()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to retry playback", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Builds a human-readable, actionable error message for the corruption
+     * dialog from the recorded playback failure (code name, cause chain,
+     * attempt count, track info).
+     */
+    private fun buildDetailedErrorMessage(failure: PlaybackErrorCenter.PlaybackFailure): String {
+        return buildString {
+            append("播放中断（网络/流源错误）\n")
+            append("错误: ").append(failure.errorCodeName).append(" (").append(failure.errorCode).append(")\n")
+            if (failure.errorMessage.isNotBlank()) {
+                append("详情: ").append(failure.errorMessage).append("\n")
+            }
+            if (failure.causeChain.isNotBlank()) {
+                append("原因链: ").append(failure.causeChain).append("\n")
+            }
+            append("重试次数: ").append(failure.attemptCount).append("/")
+                .append(StreamingRecoveryController.MAX_ATTEMPTS)
+        }
     }
 
     private val _currentSong = MutableStateFlow<Song?>(null)
@@ -1219,6 +1272,23 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     init {
         Log.d(TAG, "Initializing MusicViewModel")
         startLibrarySetupCompletionMonitor()
+
+        // Wire the playback failure hub (streaming recovery results) into the UI.
+        viewModelScope.launch {
+            PlaybackErrorCenter.currentFailure.collect { failure ->
+                if (failure != null) {
+                    _playbackFailure.value = failure
+                    _corruptedTrackName.value = failure.trackTitle
+                    _corruptedTrackMessage.value = buildDetailedErrorMessage(failure)
+                    _showCorruptionDialog.value = true
+                }
+            }
+        }
+        viewModelScope.launch {
+            PlaybackErrorCenter.retrying.collect { retrying ->
+                _recoveryRetrying.value = retrying
+            }
+        }
         
         // Single coroutine for main initialization to ensure proper ordering
         viewModelScope.launch {
@@ -4093,7 +4163,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
             Log.e(TAG, "Player error encountered in ViewModel: ${error.message}", error)
-            if (appSettings.trackErrorCheckerEnabled.value) {
+            // Streaming tracks are handled by the recovery controller (published
+            // via PlaybackErrorCenter only after retries are exhausted). Avoid
+            // showing the raw dialog immediately for those; the detailed failure
+            // replaces it when it arrives.
+            val mediaId = mediaController?.currentMediaItem?.mediaId ?: ""
+            val isStreaming = StreamingRecoveryPolicy.isStreamingMediaId(mediaId)
+            if (!isStreaming && appSettings.trackErrorCheckerEnabled.value) {
                 _corruptedTrackName.value = _currentSong.value?.title ?: "Unknown Song"
                 _corruptedTrackMessage.value = "The player encountered a playback error: ${error.message ?: "Unknown error"}"
                 _showCorruptionDialog.value = true
@@ -5468,8 +5544,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun updateRecentlyPlayed(song: Song) {
-        viewModelScope.launch {
+    private fun updateRecentlyPlayed(song: Song) {        viewModelScope.launch {
             try {
                 val currentList = _recentlyPlayed.value.toMutableList()
                 currentList.removeIf { it.id == song.id }
@@ -5859,6 +5934,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         if (!canStartPlayback("playQueue")) {
             return
         }
+
+        // Book mode: audiobook queues are always sequential (no shuffle).
+        val isAudiobookQueue = songs.any { it.isAudiobook }
+        _isAudiobookQueue.value = isAudiobookQueue
+        val effectiveShuffle = if (isAudiobookQueue) false else enableShuffle
         
         // Clear current lyrics to prevent showing stale lyrics from previous song
         _currentLyrics.value = null
@@ -5878,8 +5958,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.Default) {
             try {
                 val useExoPlayerShuffle = appSettings.shuffleUsesExoplayer.value
-                val isManualShuffle = enableShuffle == true && !useExoPlayerShuffle
-                val shouldPinStart = pinStartIndex || (enableShuffle == true && validStartIndex > 0)
+                val isManualShuffle = effectiveShuffle == true && !useExoPlayerShuffle
+                val shouldPinStart = pinStartIndex || (effectiveShuffle == true && validStartIndex > 0)
 
                 // If manual shuffle is requested, pre-shuffle the list
                 val finalSongs = if (isManualShuffle) {
@@ -5905,7 +5985,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // If ExoPlayer shuffle is used without a pinned starting song, pick a random start index so ExoPlayer's shuffle order doesn't always start on song 0.
                 val finalStartIndex = when {
                     isManualShuffle -> 0
-                    enableShuffle == true && !shouldPinStart && songs.size > 1 -> kotlin.random.Random.nextInt(songs.size)
+                    effectiveShuffle == true && !shouldPinStart && songs.size > 1 -> kotlin.random.Random.nextInt(songs.size)
                     else -> validStartIndex
                 }
 
@@ -5924,20 +6004,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         // Set shuffle mode BEFORE adding items if specified
                         if (enableShuffle != null) {
                             if (useExoPlayerShuffle) {
-                                controller.shuffleModeEnabled = enableShuffle
-                                _isShuffleEnabled.value = enableShuffle
+                                controller.shuffleModeEnabled = effectiveShuffle
+                                _isShuffleEnabled.value = effectiveShuffle
                             } else {
                                 controller.shuffleModeEnabled = false
-                                _isShuffleEnabled.value = enableShuffle
+                                _isShuffleEnabled.value = effectiveShuffle
                                 if (appSettings.shuffleModePersistence.value) {
-                                    appSettings.setSavedShuffleState(enableShuffle)
+                                    appSettings.setSavedShuffleState(effectiveShuffle)
                                 }
                             }
-                            Log.d(TAG, "Set shuffle mode to $enableShuffle before building queue (useExoPlayerShuffle=$useExoPlayerShuffle)")
+                            Log.d(TAG, "Set shuffle mode to $effectiveShuffle before building queue (useExoPlayerShuffle=$useExoPlayerShuffle)")
                         }
-                        
-                        // Add all media items at once
-                        controller.addMediaItems(mediaItems)
                         
                         // Prepare BEFORE setting queue state for better sync
                         controller.prepare()
@@ -5946,12 +6023,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         _currentQueue.value = Queue(finalSongs, finalStartIndex)
                         
                         // Set original queue state if shuffle is enabled
-                        if (enableShuffle == true) {
+                        if (effectiveShuffle == true) {
                             queueStateHolder.saveOriginalQueueState(songs, queueStateHolder.currentQueueSourceName.value)
                         } else {
                             queueStateHolder.clearOriginalQueue()
                         }
-                        
+
                         // Save queue to persistence
                         saveQueueToPersistence()
                         
@@ -6345,6 +6422,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             // Don't allow shuffle toggle if queue is empty
             if (_currentQueue.value.songs.isEmpty()) {
                 Log.w(TAG, "Cannot toggle shuffle - queue is empty")
+                return@executeCommand
+            }
+
+            // Audiobook (book mode) playback is strictly sequential: no shuffle.
+            if (_isAudiobookQueue.value || _currentQueue.value.songs.any { it.isAudiobook }) {
+                Log.w(TAG, "Shuffle is disabled for audiobook queues")
                 return@executeCommand
             }
 
