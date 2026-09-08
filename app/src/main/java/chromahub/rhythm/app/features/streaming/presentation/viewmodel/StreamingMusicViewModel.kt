@@ -24,7 +24,6 @@ import chromahub.rhythm.app.features.streaming.domain.model.StreamingPlaylist
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingServiceId
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingServiceRules
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
-import chromahub.rhythm.app.features.streaming.domain.model.StreamingItemType
 import chromahub.rhythm.app.features.streaming.domain.model.AudiobookChapterOrder
 import chromahub.rhythm.app.features.streaming.domain.model.BookQueueDetector
 import chromahub.rhythm.app.features.streaming.infrastructure.notification.StreamingNotificationManager
