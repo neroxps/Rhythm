@@ -2605,7 +2605,8 @@ private fun LocalNavigationContent(
                             }
                         },
                         isStreamingMode = true,
-                        hideShuffle = albumSongs.any { it.isBookType() },
+                        hideShuffle = albumSongs.any { it.isBookType() } ||
+                            appSettings.isAudiobookAlbum(albumId),
                         favoriteSongs = streamingLikedSongIds,
                         onShowSongInfo = { song ->
                             selectedSongForInfo = song

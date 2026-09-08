@@ -26,6 +26,7 @@ import chromahub.rhythm.app.features.streaming.domain.model.StreamingServiceRule
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingItemType
 import chromahub.rhythm.app.features.streaming.domain.model.AudiobookChapterOrder
+import chromahub.rhythm.app.features.streaming.domain.model.BookQueueDetector
 import chromahub.rhythm.app.features.streaming.infrastructure.notification.StreamingNotificationManager
 import chromahub.rhythm.app.features.streaming.domain.repository.StreamingMusicRepository
 import chromahub.rhythm.app.shared.data.model.AppSettings
@@ -1037,8 +1038,16 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
             val shouldPinStart = pinStartIndex || (shuffle && safeStartIndex > 0)
             // Audiobook detection: any book-type track forces sequential playback
             // (chapters ordered by ParentIndexNumber/IndexNumber, no shuffle).
-            val isBookQueue = playableQueue.any { it.isBookType() } ||
-                playableQueue.any { it.itemType?.let { t -> StreamingItemType.isBookType(t) } == true }
+            // Also honor albums the user manually marked as audiobooks.
+            val isBookQueue = BookQueueDetector.isBookQueue(
+                items = playableQueue.map { song ->
+                    BookQueueDetector.BookCandidate(
+                        itemType = song.itemType,
+                        albumId = song.albumId
+                    )
+                },
+                isUserMarkedAudiobookAlbum = { albumId -> appSettings.isAudiobookAlbum(albumId) }
+            )
             val effectiveShuffle = shuffle && !isBookQueue
 
             val orderedQueue = if (isBookQueue) {

@@ -247,6 +247,7 @@ class AppSettings private constructor(context: Context) {
         // Playlists
         private const val KEY_PLAYLISTS = "playlists"
         private const val KEY_FAVORITE_SONGS = "favorite_songs"
+        private const val KEY_AUDIOBOOK_ALBUMS = "audiobook_albums" // albumIds the user marked as audiobooks (book mode)
         private const val KEY_DEFAULT_PLAYLISTS_ENABLED = "default_playlists_enabled"
         
         // User Statistics
@@ -1295,6 +1296,13 @@ class AppSettings private constructor(context: Context) {
 
     private val _favoriteSongs = MutableStateFlow<String?>(prefs.getString(KEY_FAVORITE_SONGS, null))
     val favoriteSongs: StateFlow<String?> = _favoriteSongs.asStateFlow()
+
+    // Audiobook albums: albumIds the user manually marked as audiobooks (book mode).
+    // Persisted as a StringSet; exposed as a StateFlow for UI reactivity.
+    private val _audiobookAlbumIds = MutableStateFlow<Set<String>>(
+        prefs.getStringSet(KEY_AUDIOBOOK_ALBUMS, emptySet())?.toSet() ?: emptySet()
+    )
+    val audiobookAlbumIds: StateFlow<Set<String>> = _audiobookAlbumIds.asStateFlow()
     
     // Song Lyrics Preferences - Map of songId to source preference ("online", "embedded", "lrc")
     private val _songLyricsPreferences = MutableStateFlow<Map<String, String>>(
@@ -3109,6 +3117,23 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         }
         _favoriteSongs.value = favoriteSongsJson
     }
+
+    /** Mark/unmark an album as a user-defined audiobook (book mode: sequential, no shuffle, resume). */
+    fun setAudiobookAlbum(albumId: String, enabled: Boolean) {
+        val updated = if (enabled) {
+            _audiobookAlbumIds.value + albumId
+        } else {
+            _audiobookAlbumIds.value - albumId
+        }
+        // Remove empty entries defensively
+        val cleaned = updated.filter { it.isNotBlank() }.toSet()
+        prefs.edit { putStringSet(KEY_AUDIOBOOK_ALBUMS, cleaned) }
+        _audiobookAlbumIds.value = cleaned
+    }
+
+    /** Whether the given album is marked as a user-defined audiobook. */
+    fun isAudiobookAlbum(albumId: String?): Boolean =
+        albumId?.isNotBlank() == true && albumId in _audiobookAlbumIds.value
     
     fun setDefaultPlaylistsEnabled(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_DEFAULT_PLAYLISTS_ENABLED, enabled) }

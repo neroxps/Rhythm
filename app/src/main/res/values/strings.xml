@@ -1206,6 +1206,7 @@
     <string name="content_desc_switch_device">Switch device</string>
     <string name="content_desc_shuffle_play">Shuffle play</string>
     <string name="content_desc_sort_songs">Sort songs</string>
+    <string name="album_mark_audiobook">Mark as audiobook</string>
     <string name="content_desc_more_options">More options</string>
     <string name="content_desc_add_to_playlist">Add to playlist</string>
     <string name="content_desc_now_playing">Now playing</string>

@@ -928,6 +928,43 @@ fun AlbumDetailScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(end = 12.dp)
                                 ) {
+                                    if (isStreamingMode && albumId.isNotBlank()) {
+                                        val markedAudiobook by appSettings.audiobookAlbumIds.collectAsState()
+                                        val isAudiobook = markedAudiobook.contains(albumId)
+                                        IconButton(
+                                            onClick = {
+                                                HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
+                                                appSettings.setAudiobookAlbum(albumId, !isAudiobook)
+                                            },
+                                            modifier = Modifier.size(40.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .clip(RoundedCornerShape(50))
+                                                    .background(
+                                                        if (isAudiobook) {
+                                                            MaterialTheme.colorScheme.primaryContainer
+                                                        } else {
+                                                            MaterialTheme.colorScheme.surfaceContainerHigh
+                                                        }
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = MaterialSymbolIcon("menu_book"),
+                                                    contentDescription = stringResource(R.string.album_mark_audiobook),
+                                                    tint = if (isAudiobook) {
+                                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurface
+                                                    },
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
                                     Box {
                                         FilledIconButton(
                                             onClick = { showSortMenu = true },
