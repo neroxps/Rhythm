@@ -47,6 +47,7 @@ import chromahub.rhythm.app.shared.data.model.Song
 import chromahub.rhythm.app.infrastructure.service.player.RhythmPlayerEngine
 import chromahub.rhythm.app.infrastructure.service.player.TransitionController
 import chromahub.rhythm.app.infrastructure.service.player.PreloadController
+import chromahub.rhythm.app.infrastructure.service.player.StreamingRecoveryController
 import chromahub.rhythm.app.infrastructure.widget.WidgetUpdater
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -61,6 +62,7 @@ import androidx.core.app.NotificationCompat
 import androidx.media3.common.AudioAttributes as ExoAudioAttributes
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import chromahub.rhythm.app.features.streaming.di.StreamingMusicModule
 import chromahub.rhythm.app.util.GsonUtils
 import chromahub.rhythm.app.shared.data.model.Playlist
 import kotlinx.coroutines.sync.Mutex
@@ -97,6 +99,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     // Rhythm player engine (dual-player crossfade) and transition controller
     private lateinit var rhythmPlayerEngine: RhythmPlayerEngine
     private lateinit var transitionController: TransitionController
+    private lateinit var streamingRecoveryController: StreamingRecoveryController
     
     // Sleep Timer functionality
     private var sleepTimerJob: Job? = null
@@ -617,6 +620,12 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
             getString(chromahub.rhythm.app.R.string.service_loading_settings)
         )
         appSettings = AppSettings.getInstance(applicationContext)
+
+        // Initialize file logging (30MB capped, redacted) for playback diagnostics.
+        chromahub.rhythm.app.infrastructure.log.AppLogFileManager.init(applicationContext)
+
+        // Initialize the streaming recovery controller (auto-reconnect on 断流).
+        streamingRecoveryController = StreamingRecoveryController()
         
         // Initialize preloader
         preloadController = PreloadController(applicationContext, appSettings)
@@ -1121,6 +1130,17 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
             }
             
             override fun onPlayerError(error: PlaybackException) {
+                // Streaming tracks: try automatic recovery (up to 3 attempts),
+                // fall through to the default handler only for local files.
+                val item = player.currentMediaItem
+                if (::streamingRecoveryController.isInitialized) {
+                    val handled = streamingRecoveryController.handlePlayerError(
+                        error = error,
+                        mediaItem = item,
+                        playerCallbacks = recoveryPlayerCallbacks()
+                    )
+                    if (handled) return
+                }
                 handlePlaybackError(error)
             }
             
@@ -1382,6 +1402,9 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
             else -> "Playback error: ${error.message}"
         }
         Log.e(TAG, "Playback error: $message", error)
+
+        // Record local (non-streaming) failures to the log dir as well.
+        chromahub.rhythm.app.infrastructure.log.AppLogFileManager.e(TAG, message, error)
         
         // Prevent auto skip and looping loading on corrupted songs by pausing/stopping the player
         if (appSettings.trackErrorCheckerEnabled.value) {
@@ -1389,6 +1412,64 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
                 player.pause()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to pause player on error", e)
+            }
+        }
+    }
+
+    /** Callbacks that let StreamingRecoveryController drive the master player. */
+    private fun recoveryPlayerCallbacks(): StreamingRecoveryController.RecoveryPlayerCallbacks {
+        return object : StreamingRecoveryController.RecoveryPlayerCallbacks {
+            override fun context(): android.content.Context = this@MediaPlaybackService
+
+            override fun currentMediaItem(): MediaItem? = player.currentMediaItem
+
+            override fun currentPositionMs(): Long = player.currentPosition
+
+            override fun stopPlayer() {
+                try {
+                    if (rhythmPlayerEngine.isTransitionRunning()) {
+                        transitionController.cancelPendingTransition()
+                    }
+                    player.stop()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Recovery stopPlayer failed", e)
+                }
+            }
+
+            override fun replaceCurrentItem(item: MediaItem, seekPositionMs: Long) {
+                try {
+                    val index = player.currentMediaItemIndex.takeIf { it != androidx.media3.common.C.INDEX_UNSET } ?: 0
+                    player.setMediaItem(item, index)
+                    player.prepare()
+                    if (seekPositionMs > 0) {
+                        player.seekTo(index, seekPositionMs)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Recovery replaceCurrentItem failed", e)
+                    throw e
+                }
+            }
+
+            override fun play() {
+                try {
+                    player.prepare()
+                    player.play()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Recovery play failed", e)
+                    throw e
+                }
+            }
+
+            override fun currentTrackId(): String? = player.currentMediaItem?.mediaId
+
+            override fun resolveStreamingUrl(songId: String): String? {
+                return try {
+                    val repo = StreamingMusicModule.provideStreamingMusicRepository(this@MediaPlaybackService)
+                    kotlinx.coroutines.runBlocking { repo.getStreamingUrl(songId) }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Recovery resolveStreamingUrl failed", e)
+                    null
+                }
             }
         }
     }
@@ -2281,6 +2362,11 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
     override fun onDestroy() {
         instanceForWidgetAndLyricsOnly = null
         Log.d(TAG, "Service being destroyed")
+
+        // Reset the recovery controller so a new session starts clean.
+        if (::streamingRecoveryController.isInitialized) {
+            streamingRecoveryController.reset()
+        }
 
         // Persist final playback position and index on destroy
         if (::player.isInitialized && appSettings.queuePersistenceEnabled.value) {
