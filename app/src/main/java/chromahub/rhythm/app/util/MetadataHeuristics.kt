@@ -501,11 +501,12 @@ object MetadataHeuristics {
                     val parsedWordByWordLines = RhythmLyricsParser.parseWordByWordLyrics(wordByWordJson)
                     val lrc = RhythmLyricsParser.toLRCFormat(parsedWordByWordLines)
                     val plain = RhythmLyricsParser.toPlainText(parsedWordByWordLines)
-                    Log.d(TAG, "Successfully parsed embedded TTML lyrics (${parsedLines.size} lines)")
+                    val hasWordTiming = RhythmLyricsParser.hasWordTiming(parsedWordByWordLines)
+                    Log.d(TAG, "Successfully parsed embedded TTML lyrics (${parsedLines.size} lines, hasWordTiming=$hasWordTiming)")
                     return LyricsData(
                         plainLyrics = plain,
                         syncedLyrics = lrc,
-                        wordByWordLyrics = wordByWordJson,
+                        wordByWordLyrics = if (hasWordTiming) wordByWordJson else null,
                         source = "Embedded",
                         isCorrected = true
                     )

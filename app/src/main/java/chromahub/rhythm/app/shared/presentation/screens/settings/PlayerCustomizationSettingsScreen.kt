@@ -7,6 +7,11 @@
 
 package chromahub.rhythm.app.shared.presentation.screens.settings
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.StandardBottomSheetHeader
+
 
 
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
@@ -49,6 +54,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -87,7 +93,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -150,6 +155,7 @@ import chromahub.rhythm.app.shared.presentation.components.dialogs.PlaylistOpera
 import chromahub.rhythm.app.shared.presentation.components.dialogs.PlaylistOperationResultDialog
 import chromahub.rhythm.app.shared.presentation.components.dialogs.AppRestartDialog
 import chromahub.rhythm.app.shared.presentation.components.player.PlayerChipOrderBottomSheet
+import chromahub.rhythm.app.shared.presentation.components.player.ExpressiveBottomButtonsOrderBottomSheet
 import chromahub.rhythm.app.features.local.presentation.components.settings.HomeSectionOrderBottomSheet
 import chromahub.rhythm.app.features.local.presentation.components.settings.LibraryTabOrderBottomSheet
 import chromahub.rhythm.app.shared.presentation.components.Material3SettingsGroup
@@ -192,6 +198,7 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
     val playerProgressThumbRotate by appSettings.playerProgressThumbRotate.collectAsState()
 
     var showChipOrderBottomSheet by remember { mutableStateOf(false) }
+    var showExpressiveBottomButtonsSheet by remember { mutableStateOf(false) }
     var showTextAlignmentSheet by remember { mutableStateOf(false) }
     var showCornerRadiusSheet by remember { mutableStateOf(false) }
     var showPlayerProgressStyleSheet by remember { mutableStateOf(false) }
@@ -382,6 +389,16 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
                                 description = context.getString(R.string.player_merge_controls_desc),
                                 toggleState = playerMergeControlsToBottom,
                                 onToggleChange = { appSettings.setPlayerMergeControlsToBottom(it) }
+                            )
+                        ),
+                        toMaterial3SettingsItem(
+                            context = context,
+                            hapticFeedback = haptics,
+                            item = SettingItem(
+                                icon = MaterialSymbolIcon("reorder"),
+                                title = context.getString(R.string.settings_expressive_bottom_buttons),
+                                description = context.getString(R.string.settings_expressive_bottom_buttons_desc),
+                                onClick = { showExpressiveBottomButtonsSheet = true }
                             )
                         ),
                         toMaterial3SettingsItem(
@@ -612,6 +629,15 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
         )
     }
 
+    if (showExpressiveBottomButtonsSheet) {
+        ExpressiveBottomButtonsOrderBottomSheet(
+            onDismiss = { showExpressiveBottomButtonsSheet = false },
+            appSettings = appSettings,
+            haptics = haptics,
+            initialModeIndex = if (playerMergeControlsToBottom) 1 else 0
+        )
+    }
+
     if (showTextAlignmentSheet) {
         PlayerTextAlignmentBottomSheet(
             currentAlignment = playerTextAlignment,
@@ -661,7 +687,8 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
         val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
         var tempRadius by remember { mutableIntStateOf(playerArtworkCornerRadius) }
 
-        ModalBottomSheet(
+        RhythmAdaptiveModalSheet(
+            adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
             onDismissRequest = { showCornerRadiusSheet = false },
             sheetState = sheetState,
             dragHandle = {
@@ -671,53 +698,23 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
         ) {
+            StandardBottomSheetHeader(
+                title = stringResource(R.string.settings_miniplayer_corner_radius),
+                subtitle = "${tempRadius}dp",
+                visible = true
+            )
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 24.dp)
             ) {
-                // Header
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 0.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = stringResource(R.string.settings_miniplayer_corner_radius),
-                            style = MaterialTheme.typography.displayMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 6.dp)
-                                .background(
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    shape = CircleShape
-                                )
-                        ) {
-                            Text(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                text = "${tempRadius}dp",
-                                overflow = TextOverflow.Ellipsis,
-                                maxLines = 1,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
                 Slider(
                     value = tempRadius.toFloat(),
                     onValueChange = { tempRadius = it.toInt() },
                     onValueChangeFinished = {
-                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                        HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                         appSettings.setPlayerArtworkCornerRadius(tempRadius)
                     },
                     valueRange = 0f..40f,
@@ -767,7 +764,8 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
         val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
         var tempIntensity by remember { mutableFloatStateOf(playerAmbientBackdropIntensity) }
 
-        ModalBottomSheet(
+        RhythmAdaptiveModalSheet(
+            adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
             onDismissRequest = { showAmbientIntensitySheet = false },
             sheetState = sheetState,
             dragHandle = {
@@ -777,53 +775,23 @@ fun PlayerCustomizationSettingsScreen(onBackClick: () -> Unit) {
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
         ) {
+            StandardBottomSheetHeader(
+                title = context.getString(R.string.player_ambient_intensity),
+                subtitle = "${(tempIntensity * 100).toInt()}%",
+                visible = true
+            )
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 24.dp)
             ) {
-                // Header
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 0.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = context.getString(R.string.player_ambient_intensity),
-                            style = MaterialTheme.typography.displayMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 6.dp)
-                                .background(
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    shape = CircleShape
-                                )
-                        ) {
-                            Text(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                text = "${(tempIntensity * 100).toInt()}%",
-                                overflow = TextOverflow.Ellipsis,
-                                maxLines = 1,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
                 Slider(
                     value = tempIntensity,
                     onValueChange = { tempIntensity = it },
                     onValueChangeFinished = {
-                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                        HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                         appSettings.setPlayerAmbientBackdropIntensity(tempIntensity)
                     },
                     valueRange = 0.0f..1.0f,
@@ -946,7 +914,6 @@ fun SettingRow(
             TunerAnimatedSwitch(
                 checked = toggleState,
                 onCheckedChange = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                     onToggleChange(it)
                 }
             )
@@ -1014,7 +981,8 @@ fun ProgressStyleBottomSheet(
         ProgressStyleOption("DOTS", "Dots", MaterialSymbolIcon("fiber_manual_record"), "Dot indicators")
     )
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = {
@@ -1024,29 +992,24 @@ fun ProgressStyleBottomSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp)
-        ) {
-            // Header
-            Text(
-                text = title,
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(vertical = 16.dp)
-            )
+        StandardBottomSheetHeader(
+            title = title,
+            subtitle = "",
+            visible = true
+        )
 
-            Spacer(modifier = Modifier.height(8.dp))
+        val gridState = rememberLazyGridState()
 
-            // Style options in a grid
+        AdaptiveSheetScrollContainer(
+            gridState = gridState,
+            modifier = Modifier.fillMaxWidth()
+        ) { endPadding ->
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Fixed(2),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 8.dp)
+                contentPadding = PaddingValues(start = 24.dp, end = 24.dp + endPadding, top = 8.dp, bottom = 24.dp)
             ) {
                 items(progressStyles) { styleOption ->
                     val isSelected = currentStyle == styleOption.id
@@ -1131,8 +1094,6 @@ fun ProgressStyleBottomSheet(
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -1187,7 +1148,8 @@ fun ThumbStyleBottomSheet(
         ThumbStyleOption("PUFFY", "Puffy", MaterialSymbolIcon("cloud"), "M3 puffy")
     )
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = {
@@ -1197,29 +1159,24 @@ fun ThumbStyleBottomSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp)
-        ) {
-            // Header
-            Text(
-                text = title,
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(vertical = 16.dp)
-            )
+        StandardBottomSheetHeader(
+            title = title,
+            subtitle = "",
+            visible = true
+        )
 
-            Spacer(modifier = Modifier.height(8.dp))
+        val gridState = rememberLazyGridState()
 
-            // Style options in a grid
+        AdaptiveSheetScrollContainer(
+            gridState = gridState,
+            modifier = Modifier.fillMaxWidth()
+        ) { endPadding ->
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Fixed(2),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 8.dp)
+                contentPadding = PaddingValues(start = 24.dp, end = 24.dp + endPadding, top = 8.dp, bottom = 24.dp)
             ) {
                 items(thumbStyles) { styleOption ->
                     val isSelected = currentStyle == styleOption.id
@@ -1303,8 +1260,6 @@ fun ThumbStyleBottomSheet(
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -1321,7 +1276,8 @@ fun PlayerTextAlignmentBottomSheet(
 ) {
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = {
@@ -1331,97 +1287,98 @@ fun PlayerTextAlignmentBottomSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.settings_player_text_alignment),
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(vertical = 16.dp)
-            )
+        StandardBottomSheetHeader(
+            title = stringResource(R.string.settings_player_text_alignment),
+            subtitle = "",
+            visible = true
+        )
 
-            Spacer(modifier = Modifier.height(8.dp))
+        val scrollState = rememberScrollState()
 
-            listOf(
-                Triple("START", "Left", MaterialSymbolIcon("align_horizontal_left", filled = true)),
-                Triple("CENTER", "Center", MaterialSymbolIcon("format_align_center")),
-                Triple("END", "Right", MaterialSymbolIcon("align_horizontal_right", filled = true))
-            ).forEach { (value, label, icon) ->
-                val isSelected = currentAlignment == value
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected)
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        else
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                    ),
-                    onClick = {
-                        HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
-                        onAlignmentSelected(value)
-                    }
-                ) {
-                    Row(
+        AdaptiveSheetScrollContainer(
+            scrollState = scrollState,
+            modifier = Modifier.fillMaxWidth()
+        ) { endPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(start = 24.dp, end = 24.dp + endPadding, top = 8.dp, bottom = 24.dp)
+            ) {
+                listOf(
+                    Triple("START", "Left", MaterialSymbolIcon("align_horizontal_left", filled = true)),
+                    Triple("CENTER", "Center", MaterialSymbolIcon("format_align_center")),
+                    Triple("END", "Right", MaterialSymbolIcon("align_horizontal_right", filled = true))
+                ).forEach { (value, label, icon) ->
+                    val isSelected = currentAlignment == value
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isSelected)
-                                MaterialTheme.colorScheme.primary
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected)
+                                MaterialTheme.colorScheme.onPrimaryContainer
                             else
-                                MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.size(44.dp)
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                        ),
+                        onClick = {
+                            HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
+                            onAlignmentSelected(value)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.fillMaxSize()
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isSelected)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.size(44.dp)
                             ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = label,
+                                        tint = if (isSelected)
+                                            MaterialTheme.colorScheme.onPrimary
+                                        else
+                                            MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (isSelected)
+                                    MaterialTheme.colorScheme.primaryContainer
+                                else
+                                    MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            if (isSelected) {
                                 Icon(
-                                    imageVector = icon,
-                                    contentDescription = label,
-                                    tint = if (isSelected)
-                                        MaterialTheme.colorScheme.onPrimary
-                                    else
-                                        MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(22.dp)
+                                    imageVector = RhythmIcons.Check,
+                                    contentDescription = stringResource(R.string.streaming_selected),
+                                    tint = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isSelected)
-                                MaterialTheme.colorScheme.primaryContainer
-                            else
-                                MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        if (isSelected) {
-                            Icon(
-                                imageVector = RhythmIcons.Check,
-                                contentDescription = stringResource(R.string.streaming_selected),
-                                tint = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(20.dp)
-                            )
                         }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

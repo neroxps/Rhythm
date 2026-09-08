@@ -7,6 +7,11 @@
 
 package chromahub.rhythm.app.shared.presentation.screens.settings
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.groupedBottomSheetItemShape
+
 
 
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
@@ -44,7 +49,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -89,7 +93,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -164,10 +167,6 @@ import chromahub.rhythm.app.shared.presentation.screens.settings.SettingItem
 import chromahub.rhythm.app.shared.presentation.screens.settings.SettingGroup
 
 
-//            item { Spacer(modifier = Modifier.height(40.dp)) }
-//        }
-//    }
-//}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,7 +179,8 @@ fun LyricsSourceDialog(
     val lyricsSourcePreference by appSettings.lyricsSourcePreference.collectAsState()
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -191,178 +191,137 @@ fun LyricsSourceDialog(
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp)
-        ) {
+        StandardBottomSheetHeader(
+            title = context.getString(R.string.lyrics_source_priority),
+            subtitle = context.getString(R.string.lyrics_choose_source),
+            visible = true
+        )
 
-                    // Header
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 0.dp, vertical = 16.dp),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text(
-                                text = context.getString(R.string.lyrics_source_priority),
-                                style = MaterialTheme.typography.displayMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .padding(top = 6.dp)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        shape = CircleShape
-                                    )
-                            ) {
-                                Text(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    text = context.getString(R.string.lyrics_choose_source),
-                                    overflow = TextOverflow.Ellipsis,
-                                    maxLines = 1,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
+        val scrollState = rememberScrollState()
 
-            // Options
-            val sourceOptions = listOf(
-                chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.EMBEDDED_FIRST to Triple(
-                    context.getString(R.string.lyrics_source_embedded_first),
-                    context.getString(R.string.lyrics_source_embedded_first_desc),
-                    RhythmIcons.MusicNote
-                ),
-                chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.API_FIRST to Triple(
-                    context.getString(R.string.lyrics_source_api_first),
-                    context.getString(R.string.lyrics_source_api_first_desc),
-                    RhythmIcons.CloudDownload
-                ),
-                chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.LOCAL_FIRST to Triple(
-                    context.getString(R.string.lyrics_source_local_first),
-                    context.getString(R.string.lyrics_source_local_first_desc),
-                    RhythmIcons.Folder
-                )
-            )
-
-            sourceOptions.forEach { (preference, info) ->
-                val (title, description, icon) = info
-                val isSelected = lyricsSourcePreference == preference
-
-                Card(
-                    onClick = {
-                        HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
-                        appSettings.setLyricsSourcePreference(preference)
-                    },
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected)
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        else
-                            MaterialTheme.colorScheme.surfaceContainerHigh
+        AdaptiveSheetScrollContainer(
+            scrollState = scrollState,
+            modifier = Modifier.fillMaxWidth()
+        ) { endPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(start = 24.dp, end = 24.dp + endPadding, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Options
+                val sourceOptions = listOf(
+                    chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.EMBEDDED_FIRST to Triple(
+                        context.getString(R.string.lyrics_source_embedded_first),
+                        context.getString(R.string.lyrics_source_embedded_first_desc),
+                        RhythmIcons.MusicNote
                     ),
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isSelected)
-                                MaterialTheme.colorScheme.primary
+                    chromahub.rhythm.app.shared.data.model.LyricsSourcePreference.API_FIRST to Triple(
+                        context.getString(R.string.lyrics_source_api_first),
+                        context.getString(R.string.lyrics_source_api_first_desc),
+                        RhythmIcons.CloudDownload
+                    )
+                )
+
+                sourceOptions.forEachIndexed { index, (preference, details) ->
+                    val (title, description, icon) = details
+                    val isSelected = lyricsSourcePreference == preference
+
+                    Card(
+                        onClick = {
+                            HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
+                            appSettings.setLyricsSourcePreference(preference)
+                            onDismiss()
+                        },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected)
+                                MaterialTheme.colorScheme.onPrimaryContainer
                             else
-                                MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.size(44.dp)
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                        ),
+                        shape = groupedBottomSheetItemShape(index, sourceOptions.size),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected)
-                                        MaterialTheme.colorScheme.onPrimary
-                                    else
-                                        MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (isSelected)
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = if (isSelected)
                                     MaterialTheme.colorScheme.primaryContainer
                                 else
-                                    MaterialTheme.colorScheme.onSurface
+                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(if (isSelected) 30.dp else 26.dp)
                             )
-                            Text(
-                                text = description,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isSelected)
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                else
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
 
-                        if (isSelected) {
-                            Icon(
-                                imageVector = RhythmIcons.CheckCircle,
-                                contentDescription = stringResource(R.string.streaming_selected),
-                                tint = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isSelected)
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = RhythmIcons.CheckCircle,
+                                    contentDescription = stringResource(R.string.streaming_selected),
+                                    tint = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-            // Info card
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.Top
+                // Info card
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        imageVector = RhythmIcons.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = context.getString(R.string.lyrics_embedded_note),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            imageVector = RhythmIcons.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(20.dp)
                         )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = context.getString(R.string.lyrics_embedded_note),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
                     }
                 }
             }

@@ -5,6 +5,14 @@
 
 package chromahub.rhythm.app.shared.presentation.screens.settings
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.StandardBottomSheetHeader
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.groupedBottomSheetItemShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.MaterialSymbolIcon
 import chromahub.rhythm.app.shared.presentation.components.icons.Icon
@@ -79,7 +87,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetDefaults
@@ -120,8 +127,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import chromahub.rhythm.app.R
 import chromahub.rhythm.app.BuildConfig
@@ -129,11 +134,10 @@ import chromahub.rhythm.app.shared.presentation.components.common.CollapsibleHea
 import chromahub.rhythm.app.ui.utils.LazyListStateSaver
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
 import chromahub.rhythm.app.shared.data.model.AppSettings
-import chromahub.rhythm.app.features.local.presentation.components.settings.LanguageSwitcherDialog
+import chromahub.rhythm.app.features.local.presentation.components.settings.LanguageSwitcherBottomSheet
 import chromahub.rhythm.app.shared.presentation.components.dialogs.FdroidUpdateWarningDialog
 import android.content.Context
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -151,10 +155,14 @@ import androidx.compose.ui.res.stringResource
 import chromahub.rhythm.app.util.windowScreenWidthDp
 import chromahub.rhythm.app.util.windowScreenHeightDp
 
+import chromahub.rhythm.app.shared.presentation.components.SettingsBadgePalette
+import chromahub.rhythm.app.shared.presentation.components.SettingsPalettes
+
 // Define routes for navigation
 object SettingsRoutes {
     const val NOTIFICATIONS = "notifications_settings"
-    const val EXPERIMENTAL_FEATURES = "experimental_features_settings"
+    const val LABS = "labs_settings"
+    const val EXPERIMENTAL_FEATURES = LABS
     const val ABOUT = "about_screen"
     const val UPDATES = "updates_screen"
     const val MEDIA_SCAN = "media_scan_settings"
@@ -163,7 +171,6 @@ object SettingsRoutes {
     const val API_MANAGEMENT = "api_management_settings"
     const val CACHE_MANAGEMENT = "cache_management_settings"
     const val BACKUP_RESTORE = "backup_restore_settings"
-    const val LIBRARY_TAB_ORDER = "library_tab_order_settings"
     const val THEME_CUSTOMIZATION = "theme_customization_settings"
     const val PLAYER_CUSTOMIZATION = "player_customization_settings"
     const val MINIPLAYER_CUSTOMIZATION = "miniplayer_customization_settings"
@@ -195,7 +202,8 @@ data class SettingItem(
     val toggleState: Boolean? = null,
     val onToggleChange: ((Boolean) -> Unit)? = null,
     val data: Any? = null,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val palette: SettingsBadgePalette? = null
 )
 
 data class SettingGroup(
@@ -266,18 +274,18 @@ fun SettingsScreen(
             SettingGroup(
                 title = context.getString(R.string.settings_section_appearance),
                 items = buildList {
-                    add(SettingItem(RhythmIcons.Palette, context.getString(R.string.settings_theme_customization), context.getString(R.string.settings_theme_customization_desc), onClick = { onNavigateTo(SettingsRoutes.THEME_CUSTOMIZATION) }))
-                    add(SettingItem(MaterialSymbolIcon("interests"), context.getString(R.string.settings_shapes), context.getString(R.string.settings_shapes_desc), onClick = { onNavigateTo(SettingsRoutes.EXPRESSIVE_SHAPES) }))
-                    add(SettingItem(RhythmIcons.MusicNote, context.getString(R.string.settings_player_customization), context.getString(R.string.settings_player_customization_desc), onClick = { onNavigateTo(SettingsRoutes.PLAYER_CUSTOMIZATION) }))
-                    add(SettingItem(RhythmIcons.PlayCircle, context.getString(R.string.settings_miniplayer_customization), context.getString(R.string.settings_miniplayer_customization_desc), onClick = { onNavigateTo(SettingsRoutes.MINIPLAYER_CUSTOMIZATION) }))
+                    add(SettingItem(RhythmIcons.Palette, context.getString(R.string.settings_theme_customization), context.getString(R.string.settings_theme_customization_desc), palette = SettingsPalettes.Purple, onClick = { onNavigateTo(SettingsRoutes.THEME_CUSTOMIZATION) }))
+                    add(SettingItem(MaterialSymbolIcon("interests"), context.getString(R.string.settings_shapes), context.getString(R.string.settings_shapes_desc), palette = SettingsPalettes.Purple, onClick = { onNavigateTo(SettingsRoutes.EXPRESSIVE_SHAPES) }))
+                    add(SettingItem(RhythmIcons.MusicNote, context.getString(R.string.settings_player_customization), context.getString(R.string.settings_player_customization_desc), palette = SettingsPalettes.SkyBlue, onClick = { onNavigateTo(SettingsRoutes.PLAYER_CUSTOMIZATION) }))
+                    add(SettingItem(RhythmIcons.PlayCircle, context.getString(R.string.settings_miniplayer_customization), context.getString(R.string.settings_miniplayer_customization_desc), palette = SettingsPalettes.Rose, onClick = { onNavigateTo(SettingsRoutes.MINIPLAYER_CUSTOMIZATION) }))
                 }
             ),
             // 2. Home & Widgets - only show in LOCAL mode
             if (appMode == "LOCAL") SettingGroup(
                 title = context.getString(R.string.settings_section_home_widgets),
                 items = listOf(
-                    SettingItem(RhythmIcons.Home, context.getString(R.string.settings_home_customization), context.getString(R.string.settings_home_customization_desc), onClick = { onNavigateTo(SettingsRoutes.HOME_SCREEN) }),
-                    SettingItem(MaterialSymbolIcon("widgets"), context.getString(R.string.settings_widget), context.getString(R.string.settings_widget_desc), onClick = { onNavigateTo(SettingsRoutes.WIDGET) })
+                    SettingItem(RhythmIcons.Home, context.getString(R.string.settings_home_customization), context.getString(R.string.settings_home_customization_desc), palette = SettingsPalettes.Orange, onClick = { onNavigateTo(SettingsRoutes.HOME_SCREEN) }),
+                    SettingItem(MaterialSymbolIcon("widgets"), context.getString(R.string.settings_widget), context.getString(R.string.settings_widget_desc), palette = SettingsPalettes.Cyan, onClick = { onNavigateTo(SettingsRoutes.WIDGET) })
                 )
             ) else null,
             // 3. Navigation & Controls
@@ -290,6 +298,7 @@ fun SettingsScreen(
                             RhythmIcons.Home,
                             context.getString(R.string.settings_default_screen),
                             if (defaultScreen == "library") context.getString(R.string.library) else context.getString(R.string.home),
+                            palette = SettingsPalettes.Amber,
                             onClick = { showDefaultScreenDialog = true }
                         ))
                     }
@@ -297,20 +306,14 @@ fun SettingsScreen(
                         RhythmIcons.Public,
                         context.getString(R.string.settings_language),
                         context.getString(R.string.settings_language_desc),
+                        palette = SettingsPalettes.SkyBlue,
                         onClick = { showLanguageSwitcher = true }
                     ))
-                    if (appMode == "STREAMING") {
-                        add(SettingItem(
-                            MaterialSymbolIcon("reorder"),
-                            context.getString(R.string.settings_library_tab_order),
-                            context.getString(R.string.settings_library_tab_order_desc),
-                            onClick = { onNavigateTo(SettingsRoutes.LIBRARY_TAB_ORDER) }
-                        ))
-                    }
                     add(SettingItem(
                         MaterialSymbolIcon("touch_app"), 
                         context.getString(R.string.settings_haptic_feedback), 
                         context.getString(R.string.settings_haptic_feedback_desc), 
+                        palette = SettingsPalettes.SkyBlue,
                         toggleState = hapticFeedbackEnabled,
                         onToggleChange = { appSettings.setHapticFeedbackEnabled(it) }
                     ))
@@ -318,12 +321,14 @@ fun SettingsScreen(
                         MaterialSymbolIcon("gesture"),
                         context.getString(R.string.settings_gestures),
                         context.getString(R.string.settings_gestures_desc),
+                        palette = SettingsPalettes.Purple,
                         onClick = { onNavigateTo(SettingsRoutes.GESTURES) }
                     ))
                     add(SettingItem(
                         RhythmIcons.Search,
                         context.getString(R.string.settings_show_keyboard_on_search_open),
                         context.getString(R.string.settings_show_keyboard_on_search_open_desc),
+                        palette = SettingsPalettes.SkyBlue,
                         toggleState = showKeyboardOnSearchOpen,
                         onToggleChange = { appSettings.setShowKeyboardOnSearchOpen(it) }
                     ))
@@ -331,6 +336,7 @@ fun SettingsScreen(
                         MaterialSymbolIcon("lightbulb"),
                         context.getString(R.string.settings_suggestions),
                         context.getString(R.string.settings_suggestions_desc),
+                        palette = SettingsPalettes.Amber,
                         toggleState = showSettingsSuggestions,
                         onToggleChange = { appSettings.setShowSettingsSuggestions(it) }
                     ))
@@ -340,10 +346,10 @@ fun SettingsScreen(
             SettingGroup(
                 title = context.getString(R.string.settings_section_queue_playback),
                 items = buildList {
-                    add(SettingItem(RhythmIcons.Queue, context.getString(R.string.settings_queue), context.getString(R.string.settings_queue_desc), onClick = { onNavigateTo(SettingsRoutes.QUEUE) }))
-                    add(SettingItem(RhythmIcons.Play, context.getString(R.string.settings_playback), context.getString(R.string.settings_playback_desc), onClick = { onNavigateTo(SettingsRoutes.PLAYBACK) }))
+                    add(SettingItem(RhythmIcons.Queue, context.getString(R.string.settings_queue), context.getString(R.string.settings_queue_desc), palette = SettingsPalettes.SkyBlue, onClick = { onNavigateTo(SettingsRoutes.QUEUE) }))
+                    add(SettingItem(RhythmIcons.Play, context.getString(R.string.settings_playback), context.getString(R.string.settings_playback_desc), palette = SettingsPalettes.Emerald, onClick = { onNavigateTo(SettingsRoutes.PLAYBACK) }))
                     // Sleep Timer is available in both LOCAL and STREAMING modes
-                    add(SettingItem(RhythmIcons.AccessTime, context.getString(R.string.sleep_timer), context.getString(R.string.sleep_timer_set_control), onClick = { onNavigateTo(SettingsRoutes.SLEEP_TIMER) }))
+                    add(SettingItem(RhythmIcons.AccessTime, context.getString(R.string.sleep_timer), context.getString(R.string.sleep_timer_set_control), palette = SettingsPalettes.Orange, onClick = { onNavigateTo(SettingsRoutes.SLEEP_TIMER) }))
                 }
             ),
             // 5. Audio & Lyrics
@@ -351,17 +357,19 @@ fun SettingsScreen(
                 title = context.getString(R.string.settings_section_audio_lyrics),
                 items = buildList {
                     // Equalizer is available in both LOCAL and STREAMING modes
-                    add(SettingItem(RhythmIcons.Equalizer, context.getString(R.string.settings_equalizer_title), context.getString(R.string.settings_equalizer_desc), onClick = { onNavigateTo(SettingsRoutes.EQUALIZER) }))
+                    add(SettingItem(RhythmIcons.Equalizer, context.getString(R.string.settings_equalizer_title), context.getString(R.string.settings_equalizer_desc), palette = SettingsPalettes.Coral, onClick = { onNavigateTo(SettingsRoutes.EQUALIZER) }))
                     add(SettingItem(
                         icon = MaterialSymbolIcon("lyrics"),
                         title = context.getString(R.string.settings_lyrics_source),
                         description = context.getString(R.string.playback_lyrics_priority_desc),
+                        palette = SettingsPalettes.Cyan,
                         onClick = { onNavigateTo(SettingsRoutes.LYRICS) }
                     ))
                     add(SettingItem(
                         icon = MaterialSymbolIcon("speed"),
                         title = stringResource(R.string.performancesettingsscreen_performance),
                         description = context.getString(R.string.settings_performance_desc_optimized),
+                        palette = SettingsPalettes.Lime,
                         onClick = { onNavigateTo(SettingsRoutes.BATTERY_SAVER) }
                     ))
                 }
@@ -370,19 +378,19 @@ fun SettingsScreen(
             if (appMode == "LOCAL") SettingGroup(
                 title = context.getString(R.string.settings_section_library_content),
                 items = listOf(
-                    SettingItem(RhythmIcons.Folder, context.getString(R.string.settings_media_scan_title), context.getString(R.string.settings_media_scan_desc), onClick = { onNavigateTo(SettingsRoutes.MEDIA_SCAN) }),
-                    SettingItem(RhythmIcons.Artist, context.getString(R.string.settings_artist_parsing), context.getString(R.string.settings_artist_parsing_desc), onClick = { onNavigateTo(SettingsRoutes.ARTIST_SEPARATORS) }),
-                    SettingItem(MaterialSymbolIcon("playlist_add_check_circle"), context.getString(R.string.settings_playlists_title), context.getString(R.string.settings_playlists_desc), onClick = { onNavigateTo(SettingsRoutes.PLAYLISTS) }),
-                    SettingItem(RhythmIcons.Library, context.getString(R.string.settings_library_settings), context.getString(R.string.settings_library_settings_desc), onClick = { onNavigateTo(SettingsRoutes.LIBRARY_SETTINGS) })
+                    SettingItem(RhythmIcons.Folder, context.getString(R.string.settings_media_scan_title), context.getString(R.string.settings_media_scan_desc), palette = SettingsPalettes.Amber, onClick = { onNavigateTo(SettingsRoutes.MEDIA_SCAN) }),
+                    SettingItem(RhythmIcons.Artist, context.getString(R.string.settings_artist_parsing), context.getString(R.string.settings_artist_parsing_desc), palette = SettingsPalettes.Rose, onClick = { onNavigateTo(SettingsRoutes.ARTIST_SEPARATORS) }),
+                    SettingItem(MaterialSymbolIcon("playlist_add_check_circle"), context.getString(R.string.settings_playlists_title), context.getString(R.string.settings_playlists_desc), palette = SettingsPalettes.Coral, onClick = { onNavigateTo(SettingsRoutes.PLAYLISTS) }),
+                    SettingItem(RhythmIcons.Library, context.getString(R.string.settings_library_settings), context.getString(R.string.settings_library_settings_desc), palette = SettingsPalettes.Teal, onClick = { onNavigateTo(SettingsRoutes.LIBRARY_SETTINGS) })
                 )
             ) else null,
             // 6. Notifications & Services
             SettingGroup(
                 title = context.getString(R.string.settings_section_notifications_services),
                 items = buildList {
-                    add(SettingItem(RhythmIcons.Notifications, context.getString(R.string.settings_notifications), context.getString(R.string.settings_notifications_desc), onClick = { onNavigateTo(SettingsRoutes.NOTIFICATIONS) }))
+                    add(SettingItem(RhythmIcons.Notifications, context.getString(R.string.settings_notifications), context.getString(R.string.settings_notifications_desc), palette = SettingsPalettes.Coral, onClick = { onNavigateTo(SettingsRoutes.NOTIFICATIONS) }))
                     // API Management/Integrations is available in both LOCAL and STREAMING modes
-                    add(SettingItem(MaterialSymbolIcon("api"), context.getString(R.string.settings_api_management), context.getString(R.string.settings_api_management_desc), onClick = { onNavigateTo(SettingsRoutes.API_MANAGEMENT) }))
+                    add(SettingItem(MaterialSymbolIcon("api"), context.getString(R.string.settings_api_management), context.getString(R.string.settings_api_management_desc), palette = SettingsPalettes.Slate, onClick = { onNavigateTo(SettingsRoutes.API_MANAGEMENT) }))
                 }
             ),
             // 7. Data & Storage - split into shared and local-only items
@@ -390,12 +398,12 @@ fun SettingsScreen(
                 title = context.getString(R.string.settings_section_storage_data),
                 items = buildList {
                     // Listening Stats and Rhythm Guard are shared across LOCAL and STREAMING modes
-                    add(SettingItem(MaterialSymbolIcon("auto_graph"), context.getString(R.string.settings_rhythm_stats), context.getString(R.string.settings_rhythm_stats_desc), onClick = { onNavigateTo(SettingsRoutes.RHYTHM_STATS) }))
-                    add(SettingItem(RhythmIcons.Security, context.getString(R.string.settings_rhythm_guard), context.getString(R.string.settings_rhythm_guard_list_desc), onClick = { onNavigateTo(SettingsRoutes.RHYTHM_GUARD) }))
+                    add(SettingItem(MaterialSymbolIcon("auto_graph"), context.getString(R.string.settings_rhythm_stats), context.getString(R.string.settings_rhythm_stats_desc), palette = SettingsPalettes.Purple, onClick = { onNavigateTo(SettingsRoutes.RHYTHM_STATS) }))
+                    add(SettingItem(RhythmIcons.Security, context.getString(R.string.settings_rhythm_guard), context.getString(R.string.settings_rhythm_guard_list_desc), palette = SettingsPalettes.Emerald, onClick = { onNavigateTo(SettingsRoutes.RHYTHM_GUARD) }))
                     // Cache and Backup are LOCAL-only
                     if (appMode == "LOCAL") {
-                        add(SettingItem(RhythmIcons.Storage, context.getString(R.string.settings_cache_management_title), context.getString(R.string.settings_cache_management_desc), onClick = { onNavigateTo(SettingsRoutes.CACHE_MANAGEMENT) }))
-                        add(SettingItem(MaterialSymbolIcon("backup"), context.getString(R.string.settings_backup_restore_title), context.getString(R.string.settings_backup_restore_desc), onClick = { onNavigateTo(SettingsRoutes.BACKUP_RESTORE) }))
+                        add(SettingItem(RhythmIcons.Storage, context.getString(R.string.settings_cache_management_title), context.getString(R.string.settings_cache_management_desc), palette = SettingsPalettes.Yellow, onClick = { onNavigateTo(SettingsRoutes.CACHE_MANAGEMENT) }))
+                        add(SettingItem(MaterialSymbolIcon("backup"), context.getString(R.string.settings_backup_restore_title), context.getString(R.string.settings_backup_restore_desc), palette = SettingsPalettes.Emerald, onClick = { onNavigateTo(SettingsRoutes.BACKUP_RESTORE) }))
                     }
                 }
             ),
@@ -407,6 +415,7 @@ fun SettingsScreen(
                         RhythmIcons.Update,
                         context.getString(R.string.settings_updates_title),
                         context.getString(R.string.settings_updates_desc),
+                        palette = SettingsPalettes.SkyBlue,
                         toggleState = updatesEnabled,
                         onToggleChange = { enabled ->
                             if (enabled) {
@@ -421,15 +430,15 @@ fun SettingsScreen(
                         },
                         onClick = { onNavigateTo(SettingsRoutes.UPDATES) }
                     ),
-                    SettingItem(RhythmIcons.Info, context.getString(R.string.settings_about_title), context.getString(R.string.settings_about_desc), onClick = { onNavigateTo(SettingsRoutes.ABOUT) })
+                    SettingItem(RhythmIcons.Info, context.getString(R.string.settings_about_title), context.getString(R.string.settings_about_desc), palette = SettingsPalettes.Slate, onClick = { onNavigateTo(SettingsRoutes.ABOUT) })
                 )
             ),
             // 9. Advanced
             SettingGroup(
                 title = context.getString(R.string.settings_section_advanced),
                 items = listOf(
-                    SettingItem(RhythmIcons.BugReport, context.getString(R.string.settings_crash_log_history), context.getString(R.string.settings_crash_log_history_desc), onClick = { onNavigateTo(SettingsRoutes.CRASH_LOG_HISTORY) }),
-                    SettingItem(MaterialSymbolIcon("science"), context.getString(R.string.settings_experimental_features), context.getString(R.string.settings_experimental_features_desc), onClick = { onNavigateTo(SettingsRoutes.EXPERIMENTAL_FEATURES) })
+                    SettingItem(RhythmIcons.BugReport, context.getString(R.string.settings_crash_log_history), context.getString(R.string.settings_crash_log_history_desc), palette = SettingsPalettes.Coral, onClick = { onNavigateTo(SettingsRoutes.CRASH_LOG_HISTORY) }),
+                    SettingItem(MaterialSymbolIcon("science"), context.getString(R.string.settings_labs), context.getString(R.string.settings_labs_desc), palette = SettingsPalettes.Purple, onClick = { onNavigateTo(SettingsRoutes.LABS) })
                 )
             )
         ).filterNotNull() // Filter out null groups (for streaming mode)
@@ -439,35 +448,35 @@ fun SettingsScreen(
         ) {
             LazyListState()
         }
-        
-        // Main content
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            // Show search results or normal settings
-            if (isSearchActive) {
-                SettingsSearchResults(
-                    results = searchResults,
-                    onResultClick = { result ->
-                        searchQuery = "" // Clear search
-                        if (result.route != null) {
-                            onNavigateTo(result.route)
-                        }
-                    },
-                    modifier = Modifier.padding(horizontal = if (isTablet) 32.dp else 24.dp)
-                )
-            } else {
+
+        // Settings search results view
+        if (isSearchActive) {
+            SettingsSearchResults(
+                results = searchResults,
+                onResultClick = { result ->
+                    if (result.route != null) {
+                        onNavigateTo(result.route)
+                    }
+                    searchQuery = "" // Clear search when item clicked
+                },
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(horizontal = if (isTablet) 32.dp else 24.dp)
+            )
+        } else {
+            // Main settings list
+            Box(modifier = modifier.fillMaxSize()) {
                 LazyColumn(
                     state = lazyListState,
+                    contentPadding = PaddingValues(
+                        bottom = 24.dp + LocalMiniPlayerPadding.current.calculateBottomPadding()
+                    ),
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = if (isTablet) 32.dp else 24.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp + LocalMiniPlayerPadding.current.calculateBottomPadding())
+                        .padding(horizontal = if (isTablet) 32.dp else 24.dp)
                 ) {
-                    item {
-                        if (showSettingsSuggestions) {
+                    if (showSettingsSuggestions) {
+                        item(key = "settings_suggestions") {
                             SettingsTipsRow(
                                 onNavigateTo = onNavigateTo,
                                 rhythmGuardMode = rhythmGuardMode,
@@ -489,6 +498,7 @@ fun SettingsScreen(
                         val materialItems = group.items.map { item ->
                             Material3SettingsItem(
                                 icon = item.icon,
+                                palette = item.palette,
                                 title = { Text(item.title) },
                                 description = item.description?.let { descriptionText ->
                                     { Text(descriptionText) }
@@ -555,7 +565,7 @@ fun SettingsScreen(
 
                                     else -> null
                                 },
-                                isHighlighted = item.toggleState == true,
+                                isHighlighted = false,
                                 enabled = item.enabled,
                                 onClick = when {
                                     item.onClick != null -> {
@@ -599,7 +609,8 @@ fun SettingsScreen(
         if (showDefaultScreenDialog) {
             val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
             
-            ModalBottomSheet(
+            RhythmAdaptiveModalSheet(
+                adaptiveType = SheetAdaptiveType.AUTO_DIALOG,
                 onDismissRequest = { showDefaultScreenDialog = false },
                 sheetState = sheetState,
                 dragHandle = { 
@@ -611,189 +622,161 @@ fun SettingsScreen(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                        .padding(bottom = 24.dp)
-                ) {
-                    // Header
-                    Row(
+                StandardBottomSheetHeader(
+                    title = context.getString(R.string.settings_default_screen),
+                    subtitle = context.getString(R.string.settings_default_screen_desc),
+                    visible = true
+                )
+
+                val scrollState = rememberScrollState()
+
+                AdaptiveSheetScrollContainer(
+                    scrollState = scrollState,
+                    modifier = Modifier.fillMaxWidth()
+                ) { endPadding ->
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 0.dp, vertical = 16.dp),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                            .verticalScroll(scrollState)
+                            .padding(start = 24.dp, end = 24.dp + endPadding, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Column {
-                            Text(
-                                text = context.getString(R.string.settings_default_screen),
-                                style = MaterialTheme.typography.displayMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Box(
+                        // Home option
+                        Card(
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.LIGHT)
+                                appSettings.setDefaultScreen("home")
+                                showDefaultScreenDialog = false
+                            },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (defaultScreen == "home") 
+                                    MaterialTheme.colorScheme.onPrimaryContainer 
+                                else 
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                            ),
+                            shape = groupedBottomSheetItemShape(0, 2),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
                                 modifier = Modifier
-                                    .padding(top = 6.dp)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        shape = CircleShape
-                                    )
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    text = context.getString(R.string.settings_default_screen_desc),
-                                    overflow = TextOverflow.Ellipsis,
-                                    maxLines = 1,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-                    
-                    // Home option
-                    Card(
-                        onClick = {
-                            HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.LIGHT)
-                            appSettings.setDefaultScreen("home")
-                            showDefaultScreenDialog = false
-                        },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (defaultScreen == "home") 
-                                MaterialTheme.colorScheme.onPrimaryContainer 
-                            else 
-                                MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = RhythmIcons.Home,
-                                contentDescription = null,
-                                tint = if (defaultScreen == "home") 
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(32.dp)
-                            )
-                            
-                            Spacer(modifier = Modifier.width(16.dp))
-                            
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = context.getString(R.string.common_home),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (defaultScreen == "home") 
-                                        MaterialTheme.colorScheme.primaryContainer 
-                                    else 
-                                        MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = context.getString(R.string.settings_home_desc),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (defaultScreen == "home") 
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                    else 
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            
-                            if (defaultScreen == "home") {
                                 Icon(
-                                    imageVector = RhythmIcons.CheckCircle,
-                                    contentDescription = stringResource(R.string.streaming_selected),
-                                    tint = MaterialTheme.colorScheme.primaryContainer,
-                                    modifier = Modifier.size(24.dp)
+                                    imageVector = RhythmIcons.Home,
+                                    contentDescription = null,
+                                    tint = if (defaultScreen == "home") 
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else 
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(if (defaultScreen == "home") 30.dp else 26.dp)
                                 )
+                                
+                                Spacer(modifier = Modifier.width(16.dp))
+                                
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = context.getString(R.string.common_home),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (defaultScreen == "home") 
+                                            MaterialTheme.colorScheme.primaryContainer 
+                                        else 
+                                            MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = context.getString(R.string.settings_home_desc),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (defaultScreen == "home") 
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                        else 
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                
+                                if (defaultScreen == "home") {
+                                    Icon(
+                                        imageVector = RhythmIcons.CheckCircle,
+                                        contentDescription = stringResource(R.string.streaming_selected),
+                                        tint = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
                             }
                         }
-                    }
-                    
-                    // Library option
-                    Card(
-                        onClick = {
-                            HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.LIGHT)
-                            appSettings.setDefaultScreen("library")
-                            showDefaultScreenDialog = false
-                        },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (defaultScreen == "library") 
-                                MaterialTheme.colorScheme.onPrimaryContainer 
-                            else 
-                                MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        
+                        // Library option
+                        Card(
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.LIGHT)
+                                appSettings.setDefaultScreen("library")
+                                showDefaultScreenDialog = false
+                            },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (defaultScreen == "library") 
+                                    MaterialTheme.colorScheme.onPrimaryContainer 
+                                else 
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                            ),
+                            shape = groupedBottomSheetItemShape(1, 2),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                imageVector = RhythmIcons.Library,
-                                contentDescription = null,
-                                tint = if (defaultScreen == "library")
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(32.dp)
-                            )
-                            
-                            Spacer(modifier = Modifier.width(16.dp))
-                            
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = context.getString(R.string.common_library),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (defaultScreen == "library") 
-                                        MaterialTheme.colorScheme.primaryContainer 
-                                    else 
-                                        MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = context.getString(R.string.settings_library_desc),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (defaultScreen == "library") 
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                    else 
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            
-                            if (defaultScreen == "library") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Icon(
-                                    imageVector = RhythmIcons.CheckCircle,
-                                    contentDescription = stringResource(R.string.streaming_selected),
-                                    tint = MaterialTheme.colorScheme.primaryContainer,
-                                    modifier = Modifier.size(24.dp)
+                                    imageVector = RhythmIcons.Library,
+                                    contentDescription = null,
+                                    tint = if (defaultScreen == "library") 
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else 
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(if (defaultScreen == "library") 30.dp else 26.dp)
                                 )
+                                
+                                Spacer(modifier = Modifier.width(16.dp))
+                                
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = context.getString(R.string.common_library),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (defaultScreen == "library") 
+                                            MaterialTheme.colorScheme.primaryContainer 
+                                        else 
+                                            MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = context.getString(R.string.settings_library_desc),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (defaultScreen == "library") 
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                        else 
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                
+                                if (defaultScreen == "library") {
+                                    Icon(
+                                        imageVector = RhythmIcons.CheckCircle,
+                                        contentDescription = stringResource(R.string.streaming_selected),
+                                        tint = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
                             }
                         }
                     }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
         
-        // Language switcher dialog
         if (showLanguageSwitcher) {
-            LanguageSwitcherDialog(
+            LanguageSwitcherBottomSheet(
                 onDismiss = { showLanguageSwitcher = false }
             )
         }
@@ -1142,7 +1125,7 @@ fun SettingsScreenWrapper(
                             onNavigateToUpdates = { currentRoute = SettingsRoutes.UPDATES }
                         )
                         SettingsRoutes.UPDATES -> UpdatesSettingsScreen(onBackClick = { currentRoute = null })
-                        SettingsRoutes.EXPERIMENTAL_FEATURES -> ExperimentalFeaturesScreen(
+                        SettingsRoutes.LABS, SettingsRoutes.EXPERIMENTAL_FEATURES -> LabsSettingsScreen(
                             onBackClick = { currentRoute = null },
                             onNavigateTo = { currentRoute = it },
                             onNavigateToGoSettings = { currentRoute = SettingsRoutes.GO_SETTINGS }
@@ -1160,7 +1143,6 @@ fun SettingsScreenWrapper(
                         SettingsRoutes.API_MANAGEMENT -> ApiManagementSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.CACHE_MANAGEMENT -> CacheManagementSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.BACKUP_RESTORE -> BackupRestoreSettingsScreen(onBackClick = { currentRoute = null })
-                        SettingsRoutes.LIBRARY_TAB_ORDER -> LibraryTabOrderSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.THEME_CUSTOMIZATION -> ThemeCustomizationSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.PLAYER_CUSTOMIZATION -> PlayerCustomizationSettingsScreen(onBackClick = { currentRoute = null })
                         SettingsRoutes.MINIPLAYER_CUSTOMIZATION -> MiniPlayerCustomizationSettingsScreen(onBackClick = { currentRoute = null })
@@ -1277,7 +1259,7 @@ fun SettingsScreenWrapper(
                     onNavigateToUpdates = { currentRoute = SettingsRoutes.UPDATES }
                 )
                 SettingsRoutes.UPDATES -> UpdatesSettingsScreen(onBackClick = { currentRoute = null })
-                SettingsRoutes.EXPERIMENTAL_FEATURES -> ExperimentalFeaturesScreen(
+                SettingsRoutes.LABS, SettingsRoutes.EXPERIMENTAL_FEATURES -> LabsSettingsScreen(
                     onBackClick = { currentRoute = null },
                     onNavigateTo = { currentRoute = it },
                     onNavigateToGoSettings = { currentRoute = SettingsRoutes.GO_SETTINGS }
@@ -1295,7 +1277,6 @@ fun SettingsScreenWrapper(
                 SettingsRoutes.API_MANAGEMENT -> ApiManagementSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.CACHE_MANAGEMENT -> CacheManagementSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.BACKUP_RESTORE -> BackupRestoreSettingsScreen(onBackClick = { currentRoute = null })
-                SettingsRoutes.LIBRARY_TAB_ORDER -> LibraryTabOrderSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.THEME_CUSTOMIZATION -> ThemeCustomizationSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.PLAYER_CUSTOMIZATION -> PlayerCustomizationSettingsScreen(onBackClick = { currentRoute = null })
                 SettingsRoutes.MINIPLAYER_CUSTOMIZATION -> MiniPlayerCustomizationSettingsScreen(onBackClick = { currentRoute = null })

@@ -4,6 +4,7 @@
  */
 
 package chromahub.rhythm.app.shared.presentation.components.bottomsheets
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
 
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.MaterialSymbolIcon
@@ -46,6 +47,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
@@ -130,9 +132,6 @@ fun PlaybackBottomSheet(
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     
-    // Animation states
-    var showContent by remember { mutableStateOf(false) }
-    
     // System volume state
     var systemVolume by remember { mutableFloatStateOf(0.5f) }
     var systemMaxVolume by remember { mutableIntStateOf(15) }
@@ -165,24 +164,6 @@ fun PlaybackBottomSheet(
     val isOffloadEnforced = batterySaverEnabled && (batterySaverMode == "auto" || (batterySaverMode == "manual" && batterySaverEnableOffload))
     
     var showSpeedPitchSheet by remember { mutableStateOf(false) }
-    
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (showContent) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "contentAlpha"
-    )
-    
-    val contentTranslation by animateFloatAsState(
-        targetValue = if (showContent) 0f else 30f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "contentTranslation"
-    )
 
     // Quality sheet and restart dialog state
     var showQualitySheet by remember { mutableStateOf(false) }
@@ -191,9 +172,6 @@ fun PlaybackBottomSheet(
 
     // Initialize system volume and monitor for changes
     LaunchedEffect(Unit) {
-        delay(100) // Reduced delay for faster appearance
-        showContent = true
-        
         // Get system volume
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -228,7 +206,11 @@ fun PlaybackBottomSheet(
         }
     }
 
-    ModalBottomSheet(
+    val lazyListState = rememberLazyListState()
+
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.WIDE_DIALOG,
+        lazyListState = lazyListState,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -248,25 +230,25 @@ fun PlaybackBottomSheet(
                 .padding(bottom = 24.dp)
         ) {
             // Header - Fixed at top, doesn't scroll
-            AnimatedVisibility(
-                visible = showContent,
-                enter = fadeIn() + slideInVertically { it },
-                exit = fadeOut() + slideOutVertically { it }
-            ) {
-                PlaybackHeader(
-                    haptics = haptics
-                )
-            }
+            PlaybackHeader(
+                haptics = haptics
+            )
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Scrollable content
-            LazyColumn(
+            // Scrollable content inside AdaptiveSheetScrollContainer
+            AdaptiveSheetScrollContainer(
+                lazyListState = lazyListState,
                 modifier = Modifier
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(vertical = 0.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+            ) { endPadding ->
+                LazyColumn(
+                    state = lazyListState,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp, end = endPadding),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
                 // Volume + Active Device (merged)
                 item {
                     AnimateIn {
@@ -391,11 +373,10 @@ fun PlaybackBottomSheet(
                         )
                     }
                 }
-                
-
             }
         }
     }
+}
 
     // Quality selection bottom sheet
     if (showQualitySheet) {
@@ -767,13 +748,12 @@ private fun PlaybackSpeedAndPitchCard(
                         chromahub.rhythm.app.shared.presentation.screens.settings.TunerAnimatedSwitch(
                             checked = syncEnabled,
                             onCheckedChange = {
-                                HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
                                 onSyncChange(it)
                             }
                         )
                     },
                     onClick = {
-                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                        HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                         onSyncChange(!syncEnabled)
                     }
                 ),
@@ -849,13 +829,12 @@ private fun PlaybackQuickSettingsCard(
                     AnimatedAudioSwitch(
                         checked = useSystemVolume,
                         onCheckedChange = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
                             onUseSystemVolumeChange(it)
                         }
                     )
                 },
                 onClick = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                     onUseSystemVolumeChange(!useSystemVolume)
                 }
             )
@@ -869,14 +848,13 @@ private fun PlaybackQuickSettingsCard(
                     AnimatedAudioSwitch(
                         checked = stopPlaybackOnZeroVolume,
                         onCheckedChange = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
                             onStopPlaybackOnZeroVolumeChange(it)
                         }
                     )
                 },
                 scope = chromahub.rhythm.app.shared.presentation.components.SettingScope.BOTH,
                 onClick = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                     onStopPlaybackOnZeroVolumeChange(!stopPlaybackOnZeroVolume)
                 }
             )
@@ -890,14 +868,13 @@ private fun PlaybackQuickSettingsCard(
                     AnimatedAudioSwitch(
                         checked = resumeOnDeviceReconnect,
                         onCheckedChange = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
                             onResumeOnDeviceReconnectChange(it)
                         }
                     )
                 },
                 scope = chromahub.rhythm.app.shared.presentation.components.SettingScope.BOTH,
                 onClick = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                     onResumeOnDeviceReconnectChange(!resumeOnDeviceReconnect)
                 }
             )
@@ -911,14 +888,13 @@ private fun PlaybackQuickSettingsCard(
                     AnimatedAudioSwitch(
                         checked = gaplessPlayback,
                         onCheckedChange = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
                             onGaplessPlaybackChange(it)
                         }
                     )
                 },
                 scope = chromahub.rhythm.app.shared.presentation.components.SettingScope.BOTH,
                 onClick = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                     onGaplessPlaybackChange(!gaplessPlayback)
                 }
             )
@@ -932,14 +908,13 @@ private fun PlaybackQuickSettingsCard(
                     AnimatedAudioSwitch(
                         checked = showPlayedQueueSongs,
                         onCheckedChange = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
                             onShowPlayedQueueSongsChange(it)
                         }
                     )
                 },
                 scope = chromahub.rhythm.app.shared.presentation.components.SettingScope.BOTH,
                 onClick = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                     onShowPlayedQueueSongsChange(!showPlayedQueueSongs)
                 }
             )
@@ -962,7 +937,6 @@ private fun PlaybackQuickSettingsCard(
                         checked = if (isOffloadEnforced) false else crossfadeEnabled,
                         onCheckedChange = {
                             if (!isOffloadEnforced) {
-                                HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
                                 onCrossfadeEnabledChange(it)
                             }
                         },
@@ -973,7 +947,7 @@ private fun PlaybackQuickSettingsCard(
                 enabled = !isOffloadEnforced,
                 onClick = {
                     if (!isOffloadEnforced) {
-                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                        HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                         onCrossfadeEnabledChange(!crossfadeEnabled)
                     }
                 }
@@ -996,7 +970,10 @@ private fun PlaybackQuickSettingsCard(
                             Spacer(modifier = Modifier.height(8.dp))
                             Slider(
                                 value = crossfadeDuration,
-                                onValueChange = { onCrossfadeDurationChange(it) },
+                                onValueChange = {
+                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
+                                    onCrossfadeDurationChange(it)
+                                },
                                 valueRange = 1f..10f,
                                 steps = 8,
                                 colors = SliderDefaults.colors(
@@ -1213,7 +1190,6 @@ private fun PlaybackPitchCard(
                 chromahub.rhythm.app.shared.presentation.screens.settings.TunerAnimatedSwitch(
                     checked = syncEnabled,
                     onCheckedChange = {
-                        HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                         onSyncChange(it)
                     }
                 )
@@ -1330,44 +1306,7 @@ private fun AnimateIn(
     delay: Int = 50,
     content: @Composable () -> Unit
 ) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(delay.toLong())
-        visible = true
-    }
-
-    val alpha by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = androidx.compose.animation.core.tween(durationMillis = 350, delayMillis = 0),
-        label = "alpha"
-    )
-
-    val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (visible) 1f else 0.92f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "scale"
-    )
-
-    val translationY by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (visible) 0f else 20f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "translationY"
-    )
-
-    Box(
-        modifier = modifier.graphicsLayer(
-            alpha = alpha,
-            scaleX = scale,
-            scaleY = scale,
-            translationY = translationY
-        )
-    ) {
+    Box(modifier = modifier) {
         content()
     }
 }
@@ -1413,7 +1352,6 @@ private fun AudioEffectsCard(
                         checked = if (isOffloadEnforced) false else equalizerEnabled,
                         onCheckedChange = {
                             if (!isOffloadEnforced) {
-                                HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                                 onEqualizerEnabledChange(it)
                             }
                         },
@@ -1459,7 +1397,10 @@ private fun AudioEffectsCard(
                                     thumbColor = MaterialTheme.colorScheme.primary,
                                     activeTrackColor = MaterialTheme.colorScheme.primary,
                                     inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
+                                ),
+                                onValueChangeFinished = {
+                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
+                                }
                             )
                         }
                     }
@@ -1469,7 +1410,6 @@ private fun AudioEffectsCard(
                         checked = if (isOffloadEnforced) false else bassBoostEnabled,
                         onCheckedChange = {
                             if (!isOffloadEnforced) {
-                                HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                                 onBassBoostEnabledChange(it)
                             }
                         },
@@ -1515,7 +1455,10 @@ private fun AudioEffectsCard(
                                     thumbColor = MaterialTheme.colorScheme.primary,
                                     activeTrackColor = MaterialTheme.colorScheme.primary,
                                     inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
+                                ),
+                                onValueChangeFinished = {
+                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
+                                }
                             )
                         }
                     }
@@ -1525,7 +1468,6 @@ private fun AudioEffectsCard(
                         checked = if (isOffloadEnforced) false else virtualizerEnabled,
                         onCheckedChange = {
                             if (!isOffloadEnforced) {
-                                HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                                 onVirtualizerEnabledChange(it)
                             }
                         },
@@ -1591,7 +1533,8 @@ private fun QualitySelectionBottomSheet(
 ) {
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.WIDE_DIALOG,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) },

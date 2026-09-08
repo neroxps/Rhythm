@@ -7,6 +7,11 @@
 
 package chromahub.rhythm.app.shared.presentation.components.player
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.StandardBottomSheetHeader
+
 import chromahub.rhythm.app.util.HapticUtils
 import chromahub.rhythm.app.util.HapticType
 
@@ -47,7 +52,6 @@ import chromahub.rhythm.app.shared.data.model.Song
 import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel
 import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel.SleepAction
 import androidx.compose.material3.LinearWavyProgressIndicator
-import androidx.compose.animation.core.animateFloatAsState
 import chromahub.rhythm.app.shared.presentation.components.common.RhythmGroupedButton
 import chromahub.rhythm.app.shared.presentation.components.common.RhythmButtonWeighted
 import chromahub.rhythm.app.shared.presentation.components.common.RhythmButtonSize
@@ -168,7 +172,8 @@ fun SleepTimerBottomSheetNew(
 
     val bottomSheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.WIDE_DIALOG,
         onDismissRequest = onDismiss,
         sheetState = bottomSheetState,
         dragHandle = {
@@ -178,63 +183,23 @@ fun SleepTimerBottomSheetNew(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
     ) {
+        val isErrorState = !isPlaying || !serviceConnected || currentSong == null
+
+        StandardBottomSheetHeader(
+            title = context.getString(R.string.sleep_timer),
+            subtitle = when {
+                isTimerActive -> "Active"
+                isErrorState -> "No music playing"
+                else -> "Set automatic playback control"
+            },
+            visible = true
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.navigationBars)
         ) {
-            // ── Header ──────────────────────────────────────────────────────
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(top = 16.dp, bottom = 8.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(
-                            text = context.getString(R.string.sleep_timer),
-                            style = MaterialTheme.typography.displayMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        
-                        val isErrorState = !isPlaying || !serviceConnected || currentSong == null
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 6.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    color = if (isTimerActive) MaterialTheme.colorScheme.primaryContainer 
-                                            else if (isErrorState) MaterialTheme.colorScheme.errorContainer 
-                                            else MaterialTheme.colorScheme.surfaceContainerHigh
-                                )
-                        ) {
-                            Text(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                text = when {
-                                    isTimerActive -> "Active"
-                                    isErrorState -> "No music playing"
-                                    else -> "Set automatic playback control"
-                                },
-                                overflow = TextOverflow.Ellipsis,
-                                maxLines = 1,
-                                color = if (isTimerActive) MaterialTheme.colorScheme.onPrimaryContainer
-                                        else if (isErrorState) MaterialTheme.colorScheme.onErrorContainer 
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-
             // ── Scrollable Content Area ──────────────────────────────────────
             Box(
                 modifier = Modifier
@@ -263,20 +228,27 @@ fun SleepTimerBottomSheetNew(
                     when (state) {
                         // ── Active Timer ───────────────────────────────────────
                         SheetContentState.Active -> {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(rememberScrollState()),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
+                            val activeScrollState = rememberScrollState()
+                            AdaptiveSheetScrollContainer(
+                                scrollState = activeScrollState,
+                                blendColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                modifier = Modifier.fillMaxSize()
+                            ) { endPadding ->
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 24.dp, vertical = 12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        .fillMaxSize()
+                                        .verticalScroll(activeScrollState)
+                                        .padding(end = endPadding),
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    // Timer Status Card — accent (primaryContainer) background
-                                    Card(
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 24.dp, vertical = 12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        // Timer Status Card — accent (primaryContainer) background
+                                        Card(
                                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                                         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 8.dp, bottomEnd = 8.dp),
                                         modifier = Modifier.fillMaxWidth()
@@ -410,29 +382,37 @@ fun SleepTimerBottomSheetNew(
                                 }
                             }
                         }
+                    }
 
-                        // ── Inline Time Picker ─────────────────────────────────
-                        SheetContentState.InlinePicker -> {
-                            InlineTimePickerContent(
-                                onCancel = {
-                                    sheetState = if (isTimerActive) SheetContentState.Active else SheetContentState.Presets
-                                },
-                                onTimeSelected = { hours, minutes ->
-                                    val totalMinutes = hours * 60 + minutes
-                                    if (totalMinutes > 0) {
-                                        startTimer(totalMinutes)
-                                    }
-                                    sheetState = SheetContentState.Active
+                    // ── Inline Time Picker ─────────────────────────────────
+                    SheetContentState.InlinePicker -> {
+                        InlineTimePickerContent(
+                            onCancel = {
+                                sheetState = if (isTimerActive) SheetContentState.Active else SheetContentState.Presets
+                            },
+                            onTimeSelected = { hours, minutes ->
+                                val totalMinutes = hours * 60 + minutes
+                                if (totalMinutes > 0) {
+                                    startTimer(totalMinutes)
                                 }
-                            )
-                        }
+                                sheetState = SheetContentState.Active
+                            }
+                        )
+                    }
 
-                        // ── Presets ────────────────────────────────────────────
-                        SheetContentState.Presets -> {
+                    // ── Presets ────────────────────────────────────────────
+                    SheetContentState.Presets -> {
+                        val presetsScrollState = rememberScrollState()
+                        AdaptiveSheetScrollContainer(
+                            scrollState = presetsScrollState,
+                            blendColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxSize()
+                        ) { endPadding ->
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .verticalScroll(rememberScrollState()),
+                                    .verticalScroll(presetsScrollState)
+                                    .padding(end = endPadding),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Column(
@@ -589,6 +569,7 @@ fun SleepTimerBottomSheetNew(
                     }
                 }
             }
+            }
 
             // ── Fixed Footer ────────────────────────────────────────────────
             if (sheetState == SheetContentState.Active) {
@@ -737,15 +718,15 @@ private fun InlineTimePickerContent(
                     selectorColor = MaterialTheme.colorScheme.primary,
                     containerColor = MaterialTheme.colorScheme.surface,
                     clockDialSelectedContentColor = MaterialTheme.colorScheme.onPrimary,
-                    clockDialUnselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    clockDialContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     periodSelectorSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    periodSelectorUnselectedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    periodSelectorContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     periodSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    periodSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurface,
+                    periodSelectorContentColor = MaterialTheme.colorScheme.onSurface,
                     timeSelectorSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    timeSelectorUnselectedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    timeSelectorContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     timeSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    timeSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurface
+                    timeSelectorContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }

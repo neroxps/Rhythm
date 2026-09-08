@@ -31,6 +31,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import java.util.Locale
@@ -60,9 +62,25 @@ fun CanvasArtworkPlayer(
     val currentIsPlaying by rememberUpdatedState(effectivePlaying)
 
     val exoPlayer = remember(initial) {
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 2_000,
+                /* maxBufferMs = */ 6_000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        val renderersFactory = DefaultRenderersFactory(context.applicationContext).apply {
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+            setEnableDecoderFallback(true)
+        }
+
         // Use the application context so the player never retains the Activity
         // (media3 holds the builder context in its codec adapter factory).
-        ExoPlayer.Builder(context.applicationContext)
+        ExoPlayer.Builder(context.applicationContext, renderersFactory)
+            .setLoadControl(loadControl)
             .build()
             .apply {
                 setAudioAttributes(

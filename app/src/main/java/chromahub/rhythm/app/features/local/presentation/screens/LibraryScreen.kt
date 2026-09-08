@@ -6,6 +6,9 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 package chromahub.rhythm.app.features.local.presentation.screens
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.MaterialSymbolIcon
 import chromahub.rhythm.app.shared.presentation.components.icons.Icon
@@ -95,14 +98,9 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.draw.shadow
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Surface
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.BottomSheetDefaults
@@ -149,7 +147,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
 import androidx.compose.material3.SheetState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -173,10 +170,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -194,11 +189,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -232,7 +225,6 @@ import chromahub.rhythm.app.shared.presentation.components.dialogs.PlaylistOpera
 import chromahub.rhythm.app.shared.presentation.components.dialogs.AppRestartDialog
 import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SongInfoBottomSheet
 
-import chromahub.rhythm.app.shared.presentation.components.bottomsheets.ArtistBottomSheet
 import chromahub.rhythm.app.features.local.presentation.components.settings.LibraryTabOrderBottomSheet
 import chromahub.rhythm.app.shared.presentation.components.bottomsheets.BatchEditTagsSheet
 import chromahub.rhythm.app.shared.presentation.components.bottomsheets.MultiSelectionBottomSheet
@@ -251,8 +243,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.ui.text.font.FontFamily
@@ -356,13 +346,17 @@ fun LibraryScreen(
     onStreamingAddToQueue: ((Song) -> Unit)? = null,
     onStreamingToggleFavorite: ((Song) -> Unit)? = null,
     onStreamingSetFavorite: ((Song, Boolean) -> Unit)? = null,
-    streamingFavoriteSongIds: Set<String> = emptySet()
+    streamingFavoriteSongIds: Set<String> = emptySet(),
+    streamingDownloadedSongIds: Set<String> = emptySet(),
+    streamingDownloadingSongIds: Set<String> = emptySet(),
+    onStreamingToggleDownload: ((Song) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val appSettings = remember { AppSettings.getInstance(context) }
     val tabOrder by appSettings.libraryTabOrder.collectAsState()
     val hiddenTabs by appSettings.hiddenLibraryTabs.collectAsState()
     val showLibraryBottomBarAlways by appSettings.showLibraryBottomBarAlways.collectAsState()
+    val gestureLibrarySwipeTabs by appSettings.gestureLibrarySwipeTabs.collectAsState()
 
     // Show Album Artists tab by default in Go mode, hidden in local mode
     val effectiveHiddenTabs = remember(hiddenTabs, isStreamingMode) {
@@ -495,7 +489,7 @@ fun LibraryScreen(
     var explorerFolderSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var selectedSong by remember { mutableStateOf<Song?>(null) }
     var songsToAddToPlaylist by remember { mutableStateOf<List<Song>>(emptyList()) }
-    val addToPlaylistSheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
+    val addToPlaylistSheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     
     val multiSelectionState = remember { chromahub.rhythm.app.features.local.presentation.viewmodel.MultiSelectionStateHolder() }
     val selectedSongs by multiSelectionState.selectedSongs.collectAsState()
@@ -542,12 +536,15 @@ fun LibraryScreen(
         sortedSongs.distinctBy { "${it.id}_${it.uri}" }
     }
 
-    val categories = remember(preparedSongs) {
-        calculateSongCategories(preparedSongs)
+    val categories = remember(preparedSongs, streamingDownloadedSongIds) {
+        calculateSongCategories(
+            preparedSongs,
+            hasDownloadedSongs = streamingDownloadedSongIds.isNotEmpty() || (isStreamingMode && preparedSongs.any { it.id in streamingDownloadedSongIds })
+        )
     }
 
-    val filteredSongs = remember(preparedSongs, selectedCategory) {
-        filterSongsByCategory(preparedSongs, selectedCategory)
+    val filteredSongs = remember(preparedSongs, selectedCategory, streamingDownloadedSongIds) {
+        filterSongsByCategory(preparedSongs, selectedCategory, streamingDownloadedSongIds)
     }
 
     val likedSongs = remember(preparedSongs, favoriteSongs) {
@@ -701,6 +698,11 @@ fun LibraryScreen(
             onDismiss = { showSongInfoSheet = false },
             appSettings = appSettings,
             isStreamingMode = isStreamingMode,
+            isDownloaded = streamingDownloadedSongIds.contains(displaySong.id),
+            isDownloading = streamingDownloadingSongIds.contains(displaySong.id),
+            onToggleDownload = if (isStreamingMode) ({
+                onStreamingToggleDownload?.invoke(displaySong)
+            }) else null,
             onEditSong = { title, artist, album, genre, year, trackNumber, artworkUri, removeArtwork, albumArtist, composer, discNumber, onComplete ->
                 pendingMetadataEditCompleteCallback = onComplete
                 musicViewModel.saveMetadataChanges(
@@ -1708,8 +1710,10 @@ fun LibraryScreen(
                                                     selectedCategory = category
                                                 },
                                                 label = {
-                                                    Text(                                                                text = when (category) {
+                                                    Text(
+                                                        text = when (category) {
                                                             "All" -> context.getString(R.string.library_category_all)
+                                                            "Downloaded" -> stringResource(R.string.streaming_downloaded)
                                                             "Short (< 3 min)" -> context.getString(R.string.library_category_short)
                                                             "Medium (3-5 min)" -> context.getString(R.string.library_category_medium)
                                                             "Long (> 5 min)" -> context.getString(R.string.library_category_long)
@@ -1759,8 +1763,7 @@ fun LibraryScreen(
                         Box(modifier = Modifier.weight(1f).clipToBounds()) {
                             val streamingContentEmpty = songs.isEmpty() && albums.isEmpty() && artists.isEmpty() && playlists.isEmpty()
                             when {
-                                isStreamingMode && !streamingIsLoading && (!streamingServiceConnected ||
-                                    (streamingError != null && streamingContentEmpty)) -> {
+                                isStreamingMode && streamingContentEmpty && (!streamingServiceConnected || streamingError != null) -> {
                                     EmptyState(
                                         message = context.getString(R.string.streaming_home_selected_service_unavailable),
                                         icon = RhythmIcons.Connectivity.WifiOff,
@@ -1773,30 +1776,20 @@ fun LibraryScreen(
                                         onRefresh = { onConfigureService(streamingServiceName) }
                                     )
                                 }
-                                isStreamingMode && streamingIsLoading -> {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                                        ) {
-                                            ContentLoadingIndicator(
-                                                modifier = Modifier.size(48.dp)
-                                            )
-                                            Text(
-                                                text = context.getString(R.string.streaming_library_syncing),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
+                                isStreamingMode && streamingContentEmpty && streamingIsLoading -> {
+                                    EmptyState(
+                                        message = context.getString(R.string.streaming_library_syncing),
+                                        icon = MaterialSymbolIcon("sync"),
+                                        subtitle = context.getString(R.string.streaming_home_no_content_hint),
+                                        actionLabel = null,
+                                        onRefresh = null
+                                    )
                                 }
                                 else -> HorizontalPager(
                                     state = pagerState,
                                     contentPadding = PaddingValues(0.dp),
                                     pageSpacing = 0.dp,
+                                    userScrollEnabled = gestureLibrarySwipeTabs,
                                     modifier = Modifier.fillMaxSize()
                                 ) { page ->
                                 when (visibleTabIds.getOrNull(page)) {
@@ -1848,7 +1841,11 @@ fun LibraryScreen(
                                             onShowMultiSelectionSheet = { showMultiSelectionSheet = true },
                                             onRefreshClick = onRefreshClick,
                                             bottomPadding = adjustedSongsBottomPadding,
-                                            sortOrder = sortOrder
+                                            sortOrder = sortOrder,
+                                            isStreamingMode = isStreamingMode,
+                                            streamingDownloadedSongIds = streamingDownloadedSongIds,
+                                            streamingDownloadingSongIds = streamingDownloadingSongIds,
+                                            onStreamingToggleDownload = onStreamingToggleDownload
                                         )
                                     }
                                     "LIKED" -> SingleCardSongsContent(
@@ -1901,7 +1898,11 @@ fun LibraryScreen(
                                             sortOrder = sortOrder,
                                             emptyMessage = context.getString(R.string.library_no_liked_songs),
                                             emptySubtitle = context.getString(R.string.library_no_liked_songs_desc),
-                                            showEmptyRefresh = false
+                                            showEmptyRefresh = false,
+                                            isStreamingMode = isStreamingMode,
+                                            streamingDownloadedSongIds = streamingDownloadedSongIds,
+                                            streamingDownloadingSongIds = streamingDownloadingSongIds,
+                                            onStreamingToggleDownload = onStreamingToggleDownload
                                         )
                                     "PLAYLISTS" -> SingleCardPlaylistsContent(
                                         playlists = playlists,
@@ -2000,14 +2001,18 @@ fun LibraryScreen(
                                         onShowMultiSelectionSheet = { showMultiSelectionSheet = true },
                                         onRefreshClick = onRefreshClick,
                                         bottomPadding = adjustedSongsBottomPadding,
-                                        sortOrder = sortOrder
+                                        sortOrder = sortOrder,
+                                        isStreamingMode = isStreamingMode,
+                                        streamingDownloadedSongIds = streamingDownloadedSongIds,
+                                        streamingDownloadingSongIds = streamingDownloadingSongIds,
+                                        onStreamingToggleDownload = onStreamingToggleDownload
                                     )
                                     "EXPLORER" -> SingleCardExplorerContent(
                                         songs = songs,
                                         onSongClick = onSongClick,
                                         listState = explorerListState,
                                         onAddToPlaylist = { song ->
-                                            selectedSong = song
+                                            songsToAddToPlaylist = listOf(song)
                                             showAddToPlaylistSheet = true
                                         },
                                         onAddToQueue = onAddToQueue,
@@ -2069,6 +2074,8 @@ fun LibraryScreen(
                         ) {
                             LibraryScanProgressBanner(musicViewModel = musicViewModel)
                         }
+
+
 
                         val activeTabId = visibleTabIds.getOrNull(pagerState.currentPage) ?: ""
                         val hasContent = when (activeTabId) {
@@ -2428,7 +2435,11 @@ fun SingleCardSongsContent(
     sortOrder: MusicViewModel.SortOrder = MusicViewModel.SortOrder.TITLE_ASC,
     emptyMessage: String? = null,
     emptySubtitle: String? = null,
-    showEmptyRefresh: Boolean = true
+    showEmptyRefresh: Boolean = true,
+    isStreamingMode: Boolean = false,
+    streamingDownloadedSongIds: Set<String> = emptySet(),
+    streamingDownloadingSongIds: Set<String> = emptySet(),
+    onStreamingToggleDownload: ((Song) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val appSettings = remember { AppSettings.getInstance(context) }
@@ -2606,17 +2617,30 @@ fun SingleCardSongsContent(
                                     }
                                     songArtistNames.firstNotNullOfOrNull { name ->
                                         artists.find { it.name.equals(name, ignoreCase = true) }
+                                    } ?: songArtistNames.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { name ->
+                                        Artist(id = name, name = name)
                                     }
                                 } else {
                                     val songArtistNames = splitArtistNames(song.artist)
                                     songArtistNames.firstNotNullOfOrNull { name ->
                                         artists.find { it.name.equals(name, ignoreCase = true) }
+                                    } ?: songArtistNames.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { name ->
+                                        Artist(id = name, name = name)
                                     }
                                 }
-                                artist?.let { onGoToArtist(it) }
+                                val resolvedArtist = artist ?: song.artist.trim().takeIf { it.isNotBlank() }?.let { Artist(id = it, name = it) }
+                                resolvedArtist?.let { onGoToArtist(it) }
                             },
                             onGoToAlbum = {
                                 val album = albums.findAlbumForSong(song)
+                                    ?: song.album.trim().takeIf { it.isNotBlank() }?.let { albumTitle ->
+                                        Album(
+                                            id = song.albumId.ifBlank { "unknown_$albumTitle" },
+                                            title = albumTitle,
+                                            artist = song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist,
+                                            artworkUri = song.artworkUri
+                                        )
+                                    }
                                 album?.let { onGoToAlbum(it) }
                             },
                             onShowSongInfo = { onShowSongInfo(song) },
@@ -2632,7 +2656,10 @@ fun SingleCardSongsContent(
                             onLongPress = { onSongLongPress(song) },
                             customMenuContent = songMenuContent?.let { menuBuilder ->
                                 { dismissMenu -> menuBuilder(song, dismissMenu) }
-                            }
+                            },
+                            isDownloaded = isStreamingMode && streamingDownloadedSongIds.contains(song.id),
+                            isDownloading = isStreamingMode && streamingDownloadingSongIds.contains(song.id),
+                            onToggleDownload = if (isStreamingMode) ({ onStreamingToggleDownload?.invoke(song) }) else null
                         )
                     }
                 }
@@ -3291,7 +3318,10 @@ fun LibrarySongItem(
     isSelectionMode: Boolean = false,
     selectionIndex: Int? = null,
     onLongPress: () -> Unit = {},
-    customMenuContent: (@Composable (dismissMenu: () -> Unit) -> Unit)? = null
+    customMenuContent: (@Composable (dismissMenu: () -> Unit) -> Unit)? = null,
+    isDownloaded: Boolean = false,
+    isDownloading: Boolean = false,
+    onToggleDownload: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var showDropdown by remember { mutableStateOf(false) }
@@ -3439,17 +3469,49 @@ fun LibrarySongItem(
                 color = titleColor
             )
             Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = buildString {
-                    append(song.artist)
-                    append(" • ")
-                    append(song.album)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = supportingColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (isDownloaded) {
+                    Icon(
+                        imageVector = MaterialSymbolIcon("download_for_offline", filled = true),
+                        contentDescription = stringResource(R.string.streaming_downloaded),
+                        tint = if (isCurrentSong && !isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                } else if (isDownloading) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "downloadIconTransition")
+                    val rotation by infiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(durationMillis = 1500, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "downloadIconRotation"
+                    )
+                    Icon(
+                        imageVector = MaterialSymbolIcon("sync"),
+                        contentDescription = stringResource(R.string.streaming_downloading),
+                        tint = if (isCurrentSong && !isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(14.dp)
+                            .graphicsLayer { rotationZ = rotation }
+                    )
+                }
+                Text(
+                    text = buildString {
+                        append(song.artist)
+                        append(" • ")
+                        append(song.album)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = supportingColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         if (!isSelectionMode) {
@@ -3513,6 +3575,15 @@ fun LibrarySongItem(
                                     action()
                                 }
                             },
+                            isDownloaded = isDownloaded,
+                            isDownloading = isDownloading,
+                            onToggleDownload = onToggleDownload?.let { action ->
+                                {
+                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                    showDropdown = false
+                                    action()
+                                }
+                            },
                             onAddToPlaylist = {
                                 HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
                                 showDropdown = false
@@ -3569,7 +3640,10 @@ fun LibrarySongItemWrapper(
     isSelectionMode: Boolean = false,
     selectionIndex: Int? = null,
     onLongPress: () -> Unit = {},
-    customMenuContent: (@Composable (dismissMenu: () -> Unit) -> Unit)? = null
+    customMenuContent: (@Composable (dismissMenu: () -> Unit) -> Unit)? = null,
+    isDownloaded: Boolean = false,
+    isDownloading: Boolean = false,
+    onToggleDownload: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val isCurrentSong = currentSong?.id == song.id
@@ -3612,32 +3686,86 @@ fun LibrarySongItemWrapper(
                 }
             ),
         shape = itemShape,
-            color = containerColor,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp
+        color = containerColor,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
-        LibrarySongItem(
-            song = song,
-            onClick = {},
-            onMoreClick = onMoreClick,
-            onAddToQueue = onAddToQueue,
-            onPlayNext = onPlayNext,
-            onToggleFavorite = onToggleFavorite,
-            isFavorite = isFavorite,
-            onGoToArtist = onGoToArtist,
-            onGoToAlbum = onGoToAlbum,
-            onShowSongInfo = onShowSongInfo,
-            onAddToBlacklist = onAddToBlacklist,
-            onDeleteSong = onDeleteSong,
-            currentSong = currentSong,
-            isPlaying = isPlaying,
-            haptics = haptics,
-            isSelected = isSelected,
-            isSelectionMode = isSelectionMode,
-            selectionIndex = selectionIndex,
-            onLongPress = onLongPress,
-            customMenuContent = customMenuContent
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            if (isDownloading) {
+                val infiniteTransition = rememberInfiniteTransition(label = "downloadFlowTransition")
+                val flowOffset by infiniteTransition.animateFloat(
+                    initialValue = -0.5f,
+                    targetValue = 1.5f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 2000, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart
+                    ),
+                    label = "downloadFlowOffset"
+                )
+                val primaryColor = MaterialTheme.colorScheme.primary
+                val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .drawWithCache {
+                            val brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    primaryContainerColor.copy(alpha = 0.35f),
+                                    primaryColor.copy(alpha = 0.25f),
+                                    primaryContainerColor.copy(alpha = 0.35f),
+                                    Color.Transparent
+                                ),
+                                startX = size.width * (flowOffset - 0.4f),
+                                endX = size.width * (flowOffset + 0.4f)
+                            )
+                            onDrawBehind {
+                                drawRect(brush)
+                            }
+                        }
+                )
+            }
+
+            LibrarySongItem(
+                song = song,
+                onClick = {},
+                onMoreClick = onMoreClick,
+                onAddToQueue = onAddToQueue,
+                onPlayNext = onPlayNext,
+                onToggleFavorite = onToggleFavorite,
+                isFavorite = isFavorite,
+                onGoToArtist = onGoToArtist,
+                onGoToAlbum = onGoToAlbum,
+                onShowSongInfo = onShowSongInfo,
+                onAddToBlacklist = onAddToBlacklist,
+                onDeleteSong = onDeleteSong,
+                currentSong = currentSong,
+                isPlaying = isPlaying,
+                haptics = haptics,
+                isSelected = isSelected,
+                isSelectionMode = isSelectionMode,
+                selectionIndex = selectionIndex,
+                onLongPress = onLongPress,
+                customMenuContent = customMenuContent,
+                isDownloaded = isDownloaded,
+                isDownloading = isDownloading,
+                onToggleDownload = onToggleDownload
+            )
+
+            if (isDownloading) {
+                androidx.compose.material3.LinearWavyProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 12.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = Color.Transparent
+                )
+            }
+        }
     }
 }
 
@@ -4873,7 +5001,8 @@ fun SingleCardArtistsContent(
     }
 
     if (showSortOptions) {
-        ModalBottomSheet(
+        RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.AUTO_DIALOG,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
             onDismissRequest = { showSortOptions = false },
             sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
@@ -6375,8 +6504,15 @@ fun isStudioMaster(song: Song): Boolean {
     return false
 }
 
-fun calculateSongCategories(preparedSongs: List<Song>): List<String> {
+fun calculateSongCategories(
+    preparedSongs: List<Song>,
+    hasDownloadedSongs: Boolean = false
+): List<String> {
     val allCategories = mutableListOf("All")
+
+    if (hasDownloadedSongs) {
+        allCategories.add("Downloaded")
+    }
 
     if (preparedSongs.any { isStudioMaster(it) }) {
         allCategories.add("Studio Master")
@@ -6457,10 +6593,12 @@ fun calculateSongCategories(preparedSongs: List<Song>): List<String> {
 
 fun filterSongsByCategory(
     preparedSongs: List<Song>,
-    selectedCategory: String
+    selectedCategory: String,
+    downloadedSongIds: Set<String> = emptySet()
 ): List<Song> {
     return when (selectedCategory) {
         "All" -> preparedSongs
+        "Downloaded" -> preparedSongs.filter { it.id in downloadedSongIds }
 
         "Short (< 3 min)" -> preparedSongs.filter { it.duration < 3 * 60 * 1000 }
         "Medium (3-5 min)" -> preparedSongs.filter { it.duration in (3 * 60 * 1000)..(5 * 60 * 1000) }
@@ -6524,7 +6662,11 @@ fun YearGroupedSongsContent(
     onShowMultiSelectionSheet: () -> Unit = {},
     onRefreshClick: (() -> Unit)? = null,
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
-    sortOrder: MusicViewModel.SortOrder = MusicViewModel.SortOrder.TITLE_ASC
+    sortOrder: MusicViewModel.SortOrder = MusicViewModel.SortOrder.TITLE_ASC,
+    isStreamingMode: Boolean = false,
+    streamingDownloadedSongIds: Set<String> = emptySet(),
+    streamingDownloadingSongIds: Set<String> = emptySet(),
+    onStreamingToggleDownload: ((Song) -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -6620,9 +6762,18 @@ fun YearGroupedSongsContent(
                             onPlayNext = { onPlayNext(song) },
                             onToggleFavorite = { onToggleFavorite(song) },
                             isFavorite = favoriteSongs.contains(song.id),
-                            onGoToArtist = { onGoToArtist(Artist(id = "", name = song.artist)) },
+                            onGoToArtist = { onGoToArtist(Artist(id = song.artist.trim(), name = song.artist.trim())) },
                             onGoToAlbum = {
-                                albums.findAlbumForSong(song)?.let { onGoToAlbum(it) }
+                                val album = albums.findAlbumForSong(song)
+                                    ?: song.album.trim().takeIf { it.isNotBlank() }?.let { albumTitle ->
+                                        Album(
+                                            id = song.albumId.ifBlank { "unknown_$albumTitle" },
+                                            title = albumTitle,
+                                            artist = song.albumArtist?.takeIf { it.isNotBlank() } ?: song.artist,
+                                            artworkUri = song.artworkUri
+                                        )
+                                    }
+                                album?.let { onGoToAlbum(it) }
                             },
                             onShowSongInfo = { onShowSongInfo(song) },
                             onAddToBlacklist = { onAddToBlacklist(song) },
@@ -6634,7 +6785,10 @@ fun YearGroupedSongsContent(
                             isSelected = isSelected,
                             isSelectionMode = isSelectionMode,
                             selectionIndex = selectionIndex,
-                            onLongPress = { onSongLongPress(song) }
+                            onLongPress = { onSongLongPress(song) },
+                            isDownloaded = isStreamingMode && streamingDownloadedSongIds.contains(song.id),
+                            isDownloading = isStreamingMode && streamingDownloadingSongIds.contains(song.id),
+                            onToggleDownload = if (isStreamingMode) ({ onStreamingToggleDownload?.invoke(song) }) else null
                         )
                     }
                 }

@@ -88,7 +88,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -223,7 +222,6 @@ fun PerformanceSettingsScreen(onBackClick: () -> Unit) {
                         TunerAnimatedSwitch(
                             checked = batterySaverEnabled,
                             onCheckedChange = { enabled ->
-                                HapticUtils.performHapticFeedback(context, haptic, HapticType.HEAVY)
                                 appSettings.setBatterySaverEnabled(enabled)
                             }
                         )

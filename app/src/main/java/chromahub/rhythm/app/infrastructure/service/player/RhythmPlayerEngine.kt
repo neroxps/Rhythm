@@ -18,6 +18,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.DefaultDataSource
@@ -327,6 +328,7 @@ class RhythmPlayerEngine(
     ): ExoPlayer {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15_000, 30_000, 1_500, 2_500)
+            .setBackBuffer(10_000, false)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
@@ -427,12 +429,16 @@ class RhythmPlayerEngine(
         return ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(loadControl)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setSeekBackIncrementMs(10_000L)
+            .setSeekForwardIncrementMs(10_000L)
             .build().apply {
+                setShuffleOrder(RhythmShuffleOrder(0))
                 this.trackSelectionParameters = trackSelectionParameters
                 setAudioAttributes(audioAttributes, handleAudioFocus)
                 setHandleAudioBecomingNoisy(true)
                 setWakeMode(C.WAKE_MODE_LOCAL)
                 setSkipSilenceEnabled(appSettings.skipSilenceEnabled.value)
+                setSeekParameters(SeekParameters.EXACT)
                 playWhenReady = false
             }
     }
@@ -612,6 +618,23 @@ class RhythmPlayerEngine(
 
         if (futureToTransfer.isNotEmpty()) {
             incomingPlayer.addMediaItems(futureToTransfer)
+        }
+
+        if (outgoingPlayer.shuffleModeEnabled && outgoingMediaItemCount > 0) {
+            val count = outgoingMediaItemCount
+            val shuffledIndices = IntArray(count)
+            val timeline = outgoingPlayer.currentTimeline
+            var idx = 0
+            var windowIndex = timeline.getFirstWindowIndex(true)
+            val visited = BooleanArray(count)
+            while (windowIndex != C.INDEX_UNSET && windowIndex in visited.indices && !visited[windowIndex] && idx < count) {
+                shuffledIndices[idx++] = windowIndex
+                visited[windowIndex] = true
+                windowIndex = timeline.getNextWindowIndex(windowIndex, Player.REPEAT_MODE_OFF, true)
+            }
+            if (idx == count) {
+                incomingPlayer.setShuffleOrder(RhythmShuffleOrder(shuffledIndices))
+            }
         }
 
         incomingPlayer.seekTo(incomingQueueIndex, 0)

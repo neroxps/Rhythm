@@ -7,6 +7,11 @@
 
 package chromahub.rhythm.app.shared.presentation.screens.settings
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.groupedBottomSheetItemShape
+
 
 
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
@@ -30,6 +35,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.animation.core.Spring
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import chromahub.rhythm.app.R
@@ -89,7 +96,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -123,9 +129,8 @@ import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveShap
 import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveShapes
 import chromahub.rhythm.app.shared.presentation.components.common.buildSplashBackdropShapes
 import chromahub.rhythm.app.shared.presentation.components.common.SplashBackgroundOrbs
-import chromahub.rhythm.app.shared.presentation.viewmodel.AppUpdaterViewModel
-import chromahub.rhythm.app.shared.presentation.viewmodel.AppVersion
 import chromahub.rhythm.app.ui.theme.getFontPreviewStyle
+import chromahub.rhythm.app.ui.theme.getFontFamilyByName
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
@@ -154,23 +159,15 @@ import chromahub.rhythm.app.features.local.presentation.components.settings.Home
 import chromahub.rhythm.app.features.local.presentation.components.settings.LibraryTabOrderBottomSheet
 import chromahub.rhythm.app.shared.presentation.components.Material3SettingsGroup
 import chromahub.rhythm.app.shared.presentation.components.Material3SettingsItem
-
 import chromahub.rhythm.app.shared.presentation.screens.settings.TunerSettingRow
 import chromahub.rhythm.app.shared.presentation.screens.settings.TunerAnimatedSwitch
 import chromahub.rhythm.app.shared.presentation.screens.settings.TunerSettingCard
 import chromahub.rhythm.app.shared.presentation.screens.settings.SettingItem
 import chromahub.rhythm.app.shared.presentation.screens.settings.SettingGroup
-
+import chromahub.rhythm.app.ui.theme.ColorSchemeOption
+import chromahub.rhythm.app.ui.theme.getPresetColorSchemeOptions
 
 // Data classes and enums for theme customization
-data class ColorSchemeOption(
-    val name: String,
-    val displayName: String,
-    val description: String,
-    val primaryColor: Color,
-    val secondaryColor: Color,
-    val tertiaryColor: Color
-)
 
 data class FontOption(
     val name: String,
@@ -307,114 +304,10 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
         }
     }
 
-    // Color schemes - expanded list matching bottomsheet
-    val colorSchemes = remember(context) {
-        listOf(
-            ColorSchemeOption(
-                name = "Default",
-                displayName = context.getString(R.string.color_scheme_default_title),
-                description = context.getString(R.string.color_scheme_default_desc),
-                primaryColor = Color(0xFF6750A4),
-                secondaryColor = Color(0xFF625B71),
-                tertiaryColor = Color(0xFF7D5260)
-            ),
-            ColorSchemeOption(
-                name = "Warm",
-                displayName = context.getString(R.string.color_scheme_warm_title),
-                description = context.getString(R.string.color_scheme_warm_desc),
-                primaryColor = Color(0xFFFF6B35),
-                secondaryColor = Color(0xFFF7931E),
-                tertiaryColor = Color(0xFFFFC857)
-            ),
-            ColorSchemeOption(
-                name = "Cool",
-                displayName = context.getString(R.string.color_scheme_cool_title),
-                description = context.getString(R.string.color_scheme_cool_desc),
-                primaryColor = Color(0xFF1E88E5),
-                secondaryColor = Color(0xFF00897B),
-                tertiaryColor = Color(0xFF80DEEA)
-            ),
-            ColorSchemeOption(
-                name = "Forest",
-                displayName = context.getString(R.string.color_scheme_forest_title),
-                description = context.getString(R.string.color_scheme_forest_desc),
-                primaryColor = Color(0xFF2E7D32),
-                secondaryColor = Color(0xFF558B2F),
-                tertiaryColor = Color(0xFF9CCC65)
-            ),
-            ColorSchemeOption(
-                name = "Rose",
-                displayName = context.getString(R.string.color_scheme_rose_title),
-                description = context.getString(R.string.color_scheme_rose_desc),
-                primaryColor = Color(0xFFE91E63),
-                secondaryColor = Color(0xFFC2185B),
-                tertiaryColor = Color(0xFFF8BBD0)
-            ),
-            ColorSchemeOption(
-                name = "Monochrome",
-                displayName = context.getString(R.string.color_scheme_monochrome_title),
-                description = context.getString(R.string.color_scheme_monochrome_desc),
-                primaryColor = Color(0xFF424242),
-                secondaryColor = Color(0xFF616161),
-                tertiaryColor = Color(0xFF9E9E9E)
-            ),
-            ColorSchemeOption(
-                name = "Lavender",
-                displayName = context.getString(R.string.color_scheme_lavender_title),
-                description = context.getString(R.string.color_scheme_lavender_desc),
-                primaryColor = Color(0xFF7C4DFF),
-                secondaryColor = Color(0xFF9575CD),
-                tertiaryColor = Color(0xFFBA68C8)
-            ),
-            ColorSchemeOption(
-                name = "Ocean",
-                displayName = context.getString(R.string.color_scheme_ocean_title),
-                description = context.getString(R.string.color_scheme_ocean_desc),
-                primaryColor = Color(0xFF006064),
-                secondaryColor = Color(0xFF00838F),
-                tertiaryColor = Color(0xFF00ACC1)
-            ),
-            ColorSchemeOption(
-                name = "Aurora",
-                displayName = context.getString(R.string.color_scheme_aurora_title),
-                description = context.getString(R.string.color_scheme_aurora_desc),
-                primaryColor = Color(0xFF00C853),
-                secondaryColor = Color(0xFF00E676),
-                tertiaryColor = Color(0xFF69F0AE)
-            ),
-            ColorSchemeOption(
-                name = "Amber",
-                displayName = context.getString(R.string.color_scheme_amber_title),
-                description = context.getString(R.string.color_scheme_amber_desc),
-                primaryColor = Color(0xFFFF6F00),
-                secondaryColor = Color(0xFFFF8F00),
-                tertiaryColor = Color(0xFFFFC107)
-            ),
-            ColorSchemeOption(
-                name = "Crimson",
-                displayName = context.getString(R.string.color_scheme_crimson_title),
-                description = context.getString(R.string.color_scheme_crimson_desc),
-                primaryColor = Color(0xFFB71C1C),
-                secondaryColor = Color(0xFFC62828),
-                tertiaryColor = Color(0xFFD32F2F)
-            ),
-            ColorSchemeOption(
-                name = "Emerald",
-                displayName = context.getString(R.string.color_scheme_emerald_title),
-                description = context.getString(R.string.color_scheme_emerald_desc),
-                primaryColor = Color(0xFF2E7D32),
-                secondaryColor = Color(0xFF388E3C),
-                tertiaryColor = Color(0xFF4CAF50)
-            ),
-            ColorSchemeOption(
-                name = "Mint",
-                displayName = context.getString(R.string.color_scheme_mint_title),
-                description = context.getString(R.string.color_scheme_mint_desc),
-                primaryColor = Color(0xFF0097A7),
-                secondaryColor = Color(0xFF00ACC1),
-                tertiaryColor = Color(0xFF00BCD4)
-            )
-        )
+    // Color schemes - dynamic Material 3 preset schemes
+    val isCurrentDarkTheme = if (useSystemTheme) isSystemInDarkTheme() else darkMode
+    val colorSchemes = remember(context, isCurrentDarkTheme) {
+        getPresetColorSchemeOptions(context, isCurrentDarkTheme)
     }
 
     // Font options - matching bottomsheet
@@ -950,7 +843,7 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
         }
     )
 
-    FontSelectionDialog(
+    FontSelectionBottomSheet(
         showDialog = showFontSelectionDialog,
         onDismiss = { showFontSelectionDialog = false },
         fontOptions = fontOptions,
@@ -971,238 +864,242 @@ fun ThemeCustomizationSettingsScreen(onBackClick: () -> Unit) {
     if (showFestivalSelectionDialog) {
         val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
         
-        ModalBottomSheet(
-        modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
+        RhythmAdaptiveModalSheet(
+            adaptiveType = SheetAdaptiveType.AUTO_DIALOG,
+            modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
             onDismissRequest = { showFestivalSelectionDialog = false },
             sheetState = sheetState,
             dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) },
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ) {
-            val festiveContentPadding = 24.dp
+            StandardBottomSheetHeader(
+                title = context.getString(R.string.theme_festive_settings),
+                subtitle = context.getString(R.string.settings_choose_festive_theme),
+                visible = true
+            )
 
-            LazyColumn(
-            contentPadding = PaddingValues(bottom = 24.dp + LocalMiniPlayerPadding.current.calculateBottomPadding()),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp)
-            ) {
-                item {
-                    StandardBottomSheetHeader(
-                        title = context.getString(R.string.theme_festive_settings),
-                        subtitle = context.getString(R.string.settings_choose_festive_theme),
-                        visible = true,
-                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
-                    )
-                }
+            val festivalListState = rememberLazyListState()
 
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = festiveContentPadding)
-                    ) {
-                        Spacer(modifier = Modifier.height(8.dp))
+            AdaptiveSheetScrollContainer(
+                lazyListState = festivalListState,
+                modifier = Modifier.fillMaxWidth()
+            ) { endPadding ->
+                LazyColumn(
+                    state = festivalListState,
+                    contentPadding = PaddingValues(
+                        start = 24.dp,
+                        end = 24.dp + endPadding,
+                        bottom = 24.dp + LocalMiniPlayerPadding.current.calculateBottomPadding()
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                        Text(
-                            text = context.getString(R.string.settings_select_festival),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
+                            Text(
+                                text = context.getString(R.string.settings_select_festival),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
 
-                        val festivals = listOf(
-                            "CHRISTMAS" to context.getString(R.string.settings_festival_christmas),
-                            "NEW_YEAR" to context.getString(R.string.settings_festival_new_year)
-                        )
+                            val festivals = listOf(
+                                "CHRISTMAS" to context.getString(R.string.settings_festival_christmas),
+                                "NEW_YEAR" to context.getString(R.string.settings_festival_new_year)
+                            )
 
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            festivals.forEach { (id, name) ->
-                                val isSelected = id == festiveThemeType
-                                Card(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
-                                        appSettings.setFestiveThemeType(id)
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(20.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isSelected)
-                                            MaterialTheme.colorScheme.onPrimaryContainer
-                                        else
-                                            MaterialTheme.colorScheme.surfaceContainerHigh
-                                    ),
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = name,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected)
-                                                MaterialTheme.colorScheme.primaryContainer
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                festivals.forEachIndexed { index, (id, name) ->
+                                    val isSelected = id == festiveThemeType
+                                    Card(
+                                        onClick = {
+                                            HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
+                                            appSettings.setFestiveThemeType(id)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = groupedBottomSheetItemShape(index, festivals.size),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isSelected)
+                                                MaterialTheme.colorScheme.onPrimaryContainer
                                             else
-                                                MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        if (isSelected) {
-                                            Icon(
-                                                imageVector = RhythmIcons.CheckCircle,
-                                                contentDescription = context.getString(R.string.ui_selected),
-                                                tint = MaterialTheme.colorScheme.primaryContainer,
-                                                modifier = Modifier.size(24.dp)
+                                                MaterialTheme.colorScheme.surfaceContainerHigh
+                                        ),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = name,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (isSelected)
+                                                    MaterialTheme.colorScheme.primaryContainer
+                                                else
+                                                    MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.weight(1f)
                                             )
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = RhythmIcons.CheckCircle,
+                                                    contentDescription = context.getString(R.string.ui_selected),
+                                                    tint = MaterialTheme.colorScheme.primaryContainer,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        Spacer(modifier = Modifier.height(24.dp))
+                            Spacer(modifier = Modifier.height(24.dp))
 
-                        Text(
-                            text = context.getString(R.string.settings_decoration_intensity),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
                             Text(
-                                text = context.getString(R.string.settings_intensity),
+                                text = context.getString(R.string.settings_decoration_intensity),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = context.getString(R.string.settings_intensity),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "${(festiveThemeIntensity * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Slider(
+                                value = festiveThemeIntensity,
+                                onValueChange = { appSettings.setFestiveThemeIntensity(it) },
+                                valueRange = 0.1f..1f,
+                                modifier = Modifier.fillMaxWidth(),
+                                onValueChangeFinished = {
+                                    HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = context.getString(R.string.settings_snowflake_size),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "${(festiveSnowflakeSize * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Slider(
+                                value = festiveSnowflakeSize,
+                                onValueChange = { appSettings.setFestiveSnowflakeSize(it) },
+                                valueRange = 0.5f..2.0f,
+                                modifier = Modifier.fillMaxWidth(),
+                                onValueChangeFinished = {
+                                    HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = context.getString(R.string.settings_snowflake_display_area),
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Medium
                             )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = festiveSnowflakeArea == "FULL_SCREEN",
+                                    onClick = { appSettings.setFestiveSnowflakeArea("FULL_SCREEN") },
+                                    label = { Text(context.getString(R.string.settings_area_full)) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilterChip(
+                                    selected = festiveSnowflakeArea == "HEADER_ONLY",
+                                    onClick = { appSettings.setFestiveSnowflakeArea("HEADER_ONLY") },
+                                    label = { Text(context.getString(R.string.settings_area_top_third)) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
                             Text(
-                                text = "${(festiveThemeIntensity * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                text = context.getString(R.string.settings_decoration_elements),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 8.dp)
                             )
+
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                DecorationToggleCard(
+                                    title = context.getString(R.string.settings_snowfall),
+                                    description = context.getString(R.string.settings_snowfall_desc),
+                                    icon = MaterialSymbolIcon("ac_unit", filled = true),
+                                    isEnabled = festiveShowSnowfall,
+                                    onToggle = { appSettings.setFestiveShowSnowfall(it) }
+                                )
+                                DecorationToggleCard(
+                                    title = context.getString(R.string.settings_top_lights),
+                                    description = context.getString(R.string.settings_top_lights_desc),
+                                    icon = MaterialSymbolIcon("lightbulb", filled = true),
+                                    isEnabled = festiveShowTopLights,
+                                    onToggle = { appSettings.setFestiveShowTopLights(it) }
+                                )
+                                DecorationToggleCard(
+                                    title = context.getString(R.string.settings_side_garland),
+                                    description = context.getString(R.string.settings_side_garland_desc),
+                                    icon = MaterialSymbolIcon("park", filled = true),
+                                    isEnabled = festiveShowSideGarland,
+                                    onToggle = { appSettings.setFestiveShowSideGarland(it) }
+                                )
+                                DecorationToggleCard(
+                                    title = context.getString(R.string.settings_snow_pile),
+                                    description = context.getString(R.string.settings_snow_pile_desc),
+                                    icon = MaterialSymbolIcon("terrain", filled = true),
+                                    isEnabled = festiveShowBottomSnow,
+                                    onToggle = { appSettings.setFestiveShowBottomSnow(it) }
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
                         }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Slider(
-                            value = festiveThemeIntensity,
-                            onValueChange = { appSettings.setFestiveThemeIntensity(it) },
-                            valueRange = 0.1f..1f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = context.getString(R.string.settings_snowflake_size),
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "${(festiveSnowflakeSize * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Slider(
-                            value = festiveSnowflakeSize,
-                            onValueChange = { appSettings.setFestiveSnowflakeSize(it) },
-                            valueRange = 0.5f..2.0f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Text(
-                            text = context.getString(R.string.settings_snowflake_display_area),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            FilterChip(
-                                selected = festiveSnowflakeArea == "FULL_SCREEN",
-                                onClick = { appSettings.setFestiveSnowflakeArea("FULL_SCREEN") },
-                                label = { Text(context.getString(R.string.settings_area_full)) },
-                                modifier = Modifier.weight(1f)
-                            )
-                            FilterChip(
-                                selected = festiveSnowflakeArea == "LEFT_RIGHT_ONLY",
-                                onClick = { appSettings.setFestiveSnowflakeArea("LEFT_RIGHT_ONLY") },
-                                label = { Text(context.getString(R.string.settings_area_sides)) },
-                                modifier = Modifier.weight(1f)
-                            )
-                            FilterChip(
-                                selected = festiveSnowflakeArea == "TOP_ONE_THIRD",
-                                onClick = { appSettings.setFestiveSnowflakeArea("TOP_ONE_THIRD") },
-                                label = { Text(context.getString(R.string.settings_area_top_third)) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        Text(
-                            text = context.getString(R.string.settings_decoration_elements),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DecorationToggleCard(
-                                title = context.getString(R.string.settings_snowfall),
-                                description = context.getString(R.string.settings_snowfall_desc),
-                                icon = MaterialSymbolIcon("ac_unit", filled = true),
-                                isEnabled = festiveShowSnowfall,
-                                onToggle = { appSettings.setFestiveShowSnowfall(it) }
-                            )
-                            DecorationToggleCard(
-                                title = context.getString(R.string.settings_top_lights),
-                                description = context.getString(R.string.settings_top_lights_desc),
-                                icon = MaterialSymbolIcon("lightbulb", filled = true),
-                                isEnabled = festiveShowTopLights,
-                                onToggle = { appSettings.setFestiveShowTopLights(it) }
-                            )
-                            DecorationToggleCard(
-                                title = context.getString(R.string.settings_side_garland),
-                                description = context.getString(R.string.settings_side_garland_desc),
-                                icon = MaterialSymbolIcon("park", filled = true),
-                                isEnabled = festiveShowSideGarland,
-                                onToggle = { appSettings.setFestiveShowSideGarland(it) }
-                            )
-                            DecorationToggleCard(
-                                title = context.getString(R.string.settings_snow_pile),
-                                description = context.getString(R.string.settings_snow_pile_desc),
-                                icon = MaterialSymbolIcon("terrain", filled = true),
-                                isEnabled = festiveShowBottomSnow,
-                                onToggle = { appSettings.setFestiveShowBottomSnow(it) }
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
             }
@@ -1383,6 +1280,7 @@ fun ColorSchemeCircle(
 fun FontCard(
     option: FontOption,
     isSelected: Boolean,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(24.dp),
     onSelect: () -> Unit
 ) {
     Card(
@@ -1393,7 +1291,7 @@ fun FontCard(
             else
                 MaterialTheme.colorScheme.surfaceContainerHigh
         ),
-        shape = RoundedCornerShape(24.dp),
+        shape = shape,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -1443,12 +1341,17 @@ fun FontCard(
                 color = if (isSelected)
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
                 else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                    MaterialTheme.colorScheme.surfaceContainerLowest,
                 shape = RoundedCornerShape(12.dp),
+                border = if (!isSelected)
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                else
+                    null,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = stringResource(R.string.settings_quick_brown_fox),
+                    fontFamily = getFontFamilyByName(option.name),
                     style = getFontPreviewStyle(option.name),
                     color = if (isSelected)
                         MaterialTheme.colorScheme.primaryContainer

@@ -94,7 +94,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.derivedStateOf
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import chromahub.rhythm.app.features.local.presentation.viewmodel.MusicViewModel
@@ -147,7 +146,6 @@ import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SongInfo
 import kotlinx.coroutines.delay // Import delay
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -237,8 +235,6 @@ fun PlaylistDetailScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showSearchBar by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
-    var showQueueOptionsDialog by remember { mutableStateOf(false) }
-    var selectedSongForQueue by remember { mutableStateOf<Song?>(null) }
     var isReorderMode by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     
@@ -287,7 +283,7 @@ fun PlaylistDetailScreen(
     val coroutineScope = rememberCoroutineScope()
     val allSongs by musicViewModel.filteredSongs.collectAsState()
     var showSongPicker by remember { mutableStateOf(false) }
-    val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
+    val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -316,7 +312,6 @@ fun PlaylistDetailScreen(
             Toast.makeText(context, R.string.localnavigation_permission_denied_changes_saved, Toast.LENGTH_LONG).show()
         }
     }
-    val playlistClickBehavior by appSettings.playlistClickBehavior.collectAsState(initial = "ask")
     val useHoursFormat by appSettings.useHoursInTimeFormat.collectAsState()
     val canEditPlaylist = !isStreamingPlaylist
     
@@ -330,164 +325,6 @@ fun PlaylistDetailScreen(
     }
     
 
-    if (showQueueOptionsDialog && selectedSongForQueue != null) {
-        AlertDialog(
-            onDismissRequest = { 
-                showQueueOptionsDialog = false
-                selectedSongForQueue = null
-            },
-            icon = {
-                Icon(
-                    imageVector = RhythmIcons.Queue,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
-            title = { 
-                Text(
-                    "Play from Playlist",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Song info
-                    Text(
-                        selectedSongForQueue!!.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "${selectedSongForQueue!!.artist} • ${playlist.name}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    // Option 1: Load Playlist & Play
-                    Surface(
-                        onClick = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
-                            onPlaySongFromPlaylist?.invoke(selectedSongForQueue!!, playlist.songs)
-                            showQueueOptionsDialog = false
-                            selectedSongForQueue = null
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = RhythmIcons.Queue,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "Load Playlist & Play",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                                Text(
-                                    "Replace queue with playlist",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-                    }
-                    
-                    // Option 2: Play This Song Only
-                    Surface(
-                        onClick = {
-                            HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
-                            onSongClick(selectedSongForQueue!!)
-                            showQueueOptionsDialog = false
-                            selectedSongForQueue = null
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = RhythmIcons.Play,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSecondary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "Play This Song Only",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    "Don't change the queue",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                OutlinedButton(
-                    onClick = {
-                        HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
-                        showQueueOptionsDialog = false
-                        selectedSongForQueue = null
-                    }
-                ) {
-                    Icon(
-                        imageVector = RhythmIcons.Close,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.ui_cancel))
-                }
-            },
-            shape = RoundedCornerShape(24.dp)
-        )
-    }
-    
     if (showRenameDialog) {
         AlertDialog(
             onDismissRequest = { showRenameDialog = false },
@@ -705,7 +542,6 @@ fun PlaylistDetailScreen(
         )
     }
     
-    // Song Options Bottom Sheet - matching search screen
     if (showSongOptionsSheet && selectedSongForOptions != null) {
         PlaylistSongOptionsBottomSheet(
             song = selectedSongForOptions!!,
@@ -746,6 +582,7 @@ fun PlaylistDetailScreen(
                 showSongOptionsSheet = false
             },
             showRemoveFromPlaylist = canEditPlaylist || isStreamingPlaylist,
+            showAddToPlaylist = false,
             isStreamingMode = isStreamingPlaylist,
             onDeleteSong = {
                 musicViewModel.deleteSong(selectedSongForOptions!!)
@@ -1905,18 +1742,7 @@ fun PlaylistDetailScreen(
                                                     return@PlaylistSongItem
                                                 }
                                                 HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
-                                                when (playlistClickBehavior) {
-                                                    "play_all" -> {
-                                                        onPlaySongFromPlaylist?.invoke(song, playlist.songs) ?: onSongClick(song)
-                                                    }
-                                                    "play_one" -> {
-                                                        onSongClick(song)
-                                                    }
-                                                    else -> {
-                                                        selectedSongForQueue = song
-                                                        showQueueOptionsDialog = true
-                                                    }
-                                                }
+                                                onPlaySongFromPlaylist?.invoke(song, playlist.songs) ?: onSongClick(song)
                                             },
                                             onRemove = { message -> onRemoveSong(song, message) },
                                             currentSong = currentSong,
@@ -2563,21 +2389,7 @@ fun PlaylistDetailScreen(
                                             return@PlaylistSongItem
                                         }
                                         HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
-                                        when (playlistClickBehavior) {
-                                            "play_all" -> {
-                                                // Load entire playlist and play from selected song
-                                                onPlaySongFromPlaylist?.invoke(song, playlist.songs) ?: onSongClick(song)
-                                            }
-                                            "play_one" -> {
-                                                // Play only this song
-                                                onSongClick(song)
-                                            }
-                                            else -> {
-                                                // "ask" - Show dialog
-                                                selectedSongForQueue = song
-                                                showQueueOptionsDialog = true
-                                            }
-                                        }
+                                        onPlaySongFromPlaylist?.invoke(song, playlist.songs) ?: onSongClick(song)
                                     },
                                     onRemove = { message -> onRemoveSong(song, message) },
                                     currentSong = currentSong,

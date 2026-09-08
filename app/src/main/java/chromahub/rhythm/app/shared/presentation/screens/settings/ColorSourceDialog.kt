@@ -7,6 +7,11 @@
 
 package chromahub.rhythm.app.shared.presentation.screens.settings
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.groupedBottomSheetItemShape
+
 
 
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
@@ -43,7 +48,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -88,7 +92,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -178,25 +181,9 @@ fun ColorSourceDialog(
     if (showDialog) {
         val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
-        // Animation states
-        var showContent by remember { mutableStateOf(false) }
-
-        val contentAlpha by animateFloatAsState(
-            targetValue = if (showContent) 1f else 0f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            ),
-            label = "contentAlpha"
-        )
-
-        LaunchedEffect(Unit) {
-            delay(100)
-            showContent = true
-        }
-
-        ModalBottomSheet(
-        modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
+        RhythmAdaptiveModalSheet(
+            adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
+            modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
             onDismissRequest = onDismiss,
             sheetState = sheetState,
             dragHandle = {
@@ -206,52 +193,26 @@ fun ColorSourceDialog(
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 24.dp)
-                    .graphicsLayer(alpha = contentAlpha)
-            ) {
-                // Header
-                Row(
+            StandardBottomSheetHeader(
+                title = context.getString(R.string.theme_color_source),
+                subtitle = context.getString(R.string.theme_color_source_desc),
+                visible = true
+            )
+
+            val scrollState = rememberScrollState()
+
+            AdaptiveSheetScrollContainer(
+                scrollState = scrollState,
+                modifier = Modifier.fillMaxWidth()
+            ) { endPadding ->
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 0.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .verticalScroll(scrollState)
+                        .padding(start = 24.dp, end = 24.dp + endPadding, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = context.getString(R.string.theme_color_source),
-                            style = MaterialTheme.typography.displayMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 6.dp)
-                                .background(
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    shape = CircleShape
-                                )
-                        ) {
-                            Text(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                text = context.getString(R.string.theme_color_source_desc),
-                                overflow = TextOverflow.Ellipsis,
-                                maxLines = 1,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ColorSource.entries.forEach { source ->
+                    ColorSource.entries.forEachIndexed { index, source ->
                         val isSelected = selectedColorSource == source
                         Card(
                             onClick = {
@@ -279,7 +240,7 @@ fun ColorSourceDialog(
                                 else
                                     MaterialTheme.colorScheme.surfaceContainerHigh
                             ),
-                            shape = RoundedCornerShape(24.dp),
+                            shape = groupedBottomSheetItemShape(index, ColorSource.entries.size),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -288,29 +249,15 @@ fun ColorSourceDialog(
                                     .padding(20.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = if (isSelected)
-                                        MaterialTheme.colorScheme.primary
+                                Icon(
+                                    imageVector = source.icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected)
+                                        MaterialTheme.colorScheme.primaryContainer
                                     else
-                                        MaterialTheme.colorScheme.surfaceVariant,
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Icon(
-                                            imageVector = source.icon,
-                                            contentDescription = null,
-                                            tint = if (isSelected)
-                                                MaterialTheme.colorScheme.onPrimary
-                                            else
-                                                MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-                                }
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(if (isSelected) 30.dp else 26.dp)
+                                )
 
                                 Spacer(modifier = Modifier.width(16.dp))
 

@@ -92,7 +92,6 @@ import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository
 import chromahub.rhythm.app.shared.data.repository.StatsTimeRange
 import chromahub.rhythm.app.ui.theme.RhythmTheme
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.ui.res.stringResource
 import java.util.Locale
 import chromahub.rhythm.app.util.windowScreenWidthDp

@@ -1313,10 +1313,12 @@ fun parseTtml(audioMimeType: String?, lyricText: String): SemanticLyrics? {
         } catch (_: Throwable) {
             return null
         }
-    }
-    parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
-    parser.setInput(StringReader(formattedLyricText))
+    } ?: return null
     try {
+        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+    } catch (_: Throwable) {}
+    try {
+        parser.setInput(StringReader(formattedLyricText))
         var ev = parser.eventType
         while (ev != XmlPullParser.START_TAG && ev != XmlPullParser.END_DOCUMENT) {
             ev = parser.next()
@@ -1327,9 +1329,19 @@ fun parseTtml(audioMimeType: String?, lyricText: String): SemanticLyrics? {
     } catch (_: Exception) {
         return null
     }
-    val timing = parser.getAttributeValue(itunesInternal, "timing")
+    var timing: String? = parser.getAttributeValue(itunesInternal, "timing")
         ?: parser.getAttributeValue(itunes, "timing")
         ?: parser.getAttributeValue(null, "timing")
+        ?: parser.getAttributeValue("", "timing")
+    if (timing == null) {
+        for (i in 0 until parser.attributeCount) {
+            val attrName = parser.getAttributeName(i)
+            if (attrName.equals("timing", ignoreCase = true) || attrName.endsWith(":timing", ignoreCase = true)) {
+                timing = parser.getAttributeValue(i)
+                break
+            }
+        }
+    }
     var hasItunesNamespace = timing != null
     if (!hasItunesNamespace) {
         for (i in 0..<parser.getNamespaceCount(parser.depth)) {
@@ -1630,7 +1642,8 @@ fun parseTtml(audioMimeType: String?, lyricText: String): SemanticLyrics? {
             text.append(i.text)
             words += start..<text.length
         }
-        val theWords = if (timing != "Line") it.texts.mapIndexed { i, item -> item to words[i] }
+        val isLineOrNoneTiming = timing.equals("Line", ignoreCase = true) || timing.equals("None", ignoreCase = true)
+        val theWords = if (!isLineOrNoneTiming) it.texts.mapIndexed { i, item -> item to words[i] }
             .filter { item -> item.first.time != null }
             .map { item -> SemanticLyrics.Word(item.first.time!!, item.second, false) }
             .takeIf { item -> item.isNotEmpty() }
