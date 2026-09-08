@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,6 +34,8 @@ import chromahub.rhythm.app.shared.presentation.components.icons.MaterialSymbolI
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.data.model.Song
 import chromahub.rhythm.app.R
+import chromahub.rhythm.app.util.HapticType
+import chromahub.rhythm.app.util.HapticUtils
 
 private data class SongMenuItem(
     val title: String,
@@ -59,9 +62,13 @@ fun RhythmSongMenuContent(
     onGoToArtist: (() -> Unit)? = null,
     onAddToBlacklist: (() -> Unit)? = null,
     onDeleteSong: (() -> Unit)? = null,
-    onShare: (() -> Unit)? = null
+    onShare: (() -> Unit)? = null,
+    isDownloaded: Boolean? = null,
+    isDownloading: Boolean = false,
+    onToggleDownload: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val finalOnShare = onShare ?: song?.let { s ->
         {
             try {
@@ -143,6 +150,28 @@ fun RhythmSongMenuContent(
                     icon = RhythmIcons.AddToPlaylist,
                     iconBgColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
                     iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    onClick = action
+                )
+            )
+        }
+        onToggleDownload?.let { action ->
+            val downloaded = isDownloaded == true
+            add(
+                SongMenuItem(
+                    title = when {
+                        isDownloading -> stringResource(R.string.streaming_downloading)
+                        downloaded -> stringResource(R.string.streaming_remove_download)
+                        else -> stringResource(R.string.streaming_download)
+                    },
+                    icon = when {
+                        isDownloading -> MaterialSymbolIcon("sync")
+                        downloaded -> MaterialSymbolIcon("download_done", filled = true)
+                        else -> MaterialSymbolIcon("download")
+                    },
+                    iconBgColor = if (downloaded) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                        else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                    iconTint = if (downloaded) MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSecondaryContainer,
                     onClick = action
                 )
             )
@@ -241,7 +270,10 @@ fun RhythmSongMenuContent(
                 }
 
                 Surface(
-                    onClick = item.onClick,
+                    onClick = {
+                        HapticUtils.performHapticFeedback(context, haptic, HapticType.MEDIUM)
+                        item.onClick()
+                    },
                     shape = itemShape,
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     contentColor = MaterialTheme.colorScheme.onSurface,

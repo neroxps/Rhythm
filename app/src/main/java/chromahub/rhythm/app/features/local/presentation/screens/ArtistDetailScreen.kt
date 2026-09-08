@@ -38,8 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -107,6 +109,7 @@ fun ArtistDetailScreen(
     artistName: String,
     onBack: () -> Unit,
     onSongClick: (Song) -> Unit,
+    onSongClickInContext: (Song, List<Song>) -> Unit = { song, _ -> onSongClick(song) },
     onAlbumClick: (Album) -> Unit,
     onPlayAll: (List<Song>) -> Unit,
     onShufflePlay: (List<Song>) -> Unit,
@@ -150,7 +153,7 @@ fun ArtistDetailScreen(
     val allArtists by viewModel.artists.collectAsState()
     
     val artist = remember(allArtists, artistName, artistOverride) {
-        artistOverride ?: allArtists.find { it.name == artistName }
+        artistOverride ?: allArtists.find { it.name.equals(artistName, ignoreCase = true) }
     }
 
     var currentArtworkUri by remember(artist?.id, artist?.artworkUri) {
@@ -289,7 +292,7 @@ fun ArtistDetailScreen(
 
     val totalDuration = remember(rawArtistSongs) { rawArtistSongs.sumOf { it.duration } }
     val artistArtworkSource by appSettings.artistArtworkSource.collectAsState()
-    val displayArtworkUri = if (artistArtworkSource == ArtistArtworkSource.DISABLED) null else currentArtworkUri
+    val displayArtworkUri = if (artistArtworkSource == ArtistArtworkSource.DISABLED) null else (currentArtworkUri ?: rawArtistSongs.firstNotNullOfOrNull { it.artworkUri })
     val backgroundColor = MaterialTheme.colorScheme.background
 
     if (isLandscapeTablet) {
@@ -609,7 +612,7 @@ fun ArtistDetailScreen(
                                             totalCount = artistSongs.size,
                                             onClick = {
                                                 HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
-                                                onSongClick(song)
+                                                onSongClickInContext(song, artistSongs)
                                                 onPlayerClick()
                                             },
                                             onAddToQueue = {
@@ -668,49 +671,56 @@ fun ArtistDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(450.dp)
+                        .clipToBounds()
                         .graphicsLayer {
                             alpha = expandedAlpha
                             scaleX = 1f + collapsedFraction * 0.15f
                             scaleY = 1f + collapsedFraction * 0.15f
                         }
                 ) {
-                    if (displayArtworkUri != null) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .apply(ImageUtils.buildImageRequest(displayArtworkUri, artistName, context.cacheDir, M3PlaceholderType.ARTIST))
-                                .build(),
-                            contentDescription = stringResource(R.string.artist_artwork_description, artistName),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                    ) {
+                        if (displayArtworkUri != null) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .apply(ImageUtils.buildImageRequest(displayArtworkUri, artistName, context.cacheDir, M3PlaceholderType.ARTIST))
+                                    .build(),
+                                contentDescription = stringResource(R.string.artist_artwork_description, artistName),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(
+                                                MaterialTheme.colorScheme.primaryContainer,
+                                                MaterialTheme.colorScheme.tertiaryContainer
+                                            )
+                                        )
+                                    )
+                            )
+                        }
+
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(
-                                    Brush.linearGradient(
+                                    Brush.verticalGradient(
                                         colors = listOf(
-                                            MaterialTheme.colorScheme.primaryContainer,
-                                            MaterialTheme.colorScheme.tertiaryContainer
+                                            Color.Transparent,
+                                            backgroundColor.copy(alpha = 0.6f),
+                                            backgroundColor
                                         )
                                     )
                                 )
                         )
                     }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        backgroundColor.copy(alpha = 0.6f),
-                                        backgroundColor
-                                    )
-                                )
-                            )
-                    )
 
                     // Hero Artist Details - bottom aligned cleanly without raw chips
                     Column(
@@ -938,7 +948,7 @@ fun ArtistDetailScreen(
                 val collapsedTopPadding = paddingValues.calculateTopPadding()
                 val dynamicTopPadding = 450.dp + (collapsedTopPadding - 450.dp) * collapsedFraction
 
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(top = dynamicTopPadding)
@@ -1022,7 +1032,7 @@ fun ArtistDetailScreen(
                                             totalCount = artistSongs.size,
                                             onClick = {
                                                 HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
-                                                onSongClick(song)
+                                                onSongClickInContext(song, artistSongs)
                                                 onPlayerClick()
                                             },
                                             onAddToQueue = {
@@ -1061,6 +1071,29 @@ fun ArtistDetailScreen(
                             }
                         }
                     }
+
+                    val headerBlendAlpha by animateFloatAsState(
+                        targetValue = ((collapsedFraction - 0.65f) / 0.35f).coerceIn(0f, 1f),
+                        animationSpec = tween(250),
+                        label = "artistHeaderBlendAlpha"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .height(24.dp)
+                            .graphicsLayer { alpha = headerBlendAlpha }
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        backgroundColor,
+                                        backgroundColor.copy(alpha = 0.72f),
+                                        backgroundColor.copy(alpha = 0.32f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
                 }
             }
         }

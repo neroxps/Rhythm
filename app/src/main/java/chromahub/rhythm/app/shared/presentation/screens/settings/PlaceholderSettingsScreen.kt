@@ -88,7 +88,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -175,9 +174,9 @@ fun PlaceholderSettingsScreen() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Large settings icon
+        val cookieShape = rememberExpressiveShape("COOKIE_12")
         Surface(
-            shape = RoundedCornerShape(55.dp),
+            shape = cookieShape,
             color = MaterialTheme.colorScheme.primaryContainer,
             modifier = Modifier.size(120.dp)
         ) {

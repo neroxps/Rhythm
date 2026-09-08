@@ -5,6 +5,9 @@
 
 package chromahub.rhythm.app.shared.presentation.components.bottomsheets
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.Icon
 import chromahub.rhythm.app.shared.presentation.components.icons.MaterialSymbolIcon
@@ -59,6 +62,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import chromahub.rhythm.app.util.HapticUtils
+import chromahub.rhythm.app.util.HapticType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import coil.compose.AsyncImage
@@ -85,6 +91,7 @@ import chromahub.rhythm.app.util.MediaUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
 import java.io.File
 import chromahub.rhythm.app.R
 import androidx.compose.ui.res.stringResource
@@ -166,6 +173,7 @@ fun BatchEditTagsSheet(
     ) -> Unit
 ) {
     val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
     var editArtist by remember { mutableStateOf(false) }
@@ -266,7 +274,11 @@ fun BatchEditTagsSheet(
         )
     }
 
-    ModalBottomSheet(
+    val scrollState = rememberScrollState()
+
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.TWO_PANE_DIALOG,
+        scrollState = scrollState,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         onDismissRequest = { if (!isSaving) onDismiss() },
         sheetState = sheetState,
@@ -284,21 +296,20 @@ fun BatchEditTagsSheet(
             StandardBottomSheetHeader(
                 title = stringResource(R.string.batchedittagssheet_batch_edit_tags),
                 subtitle = "${selectedSongs.size} songs selected • $enabledFieldCount fields enabled",
-                visible = true,
-                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
+                visible = true
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Box(
+            AdaptiveSheetScrollContainer(
+                scrollState = scrollState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-            ) {
+            ) { endPadding ->
                 Column(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .verticalScroll(rememberScrollState()),
+                        .padding(end = endPadding)
+                        .verticalScroll(scrollState),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Surface(
@@ -429,6 +440,7 @@ fun BatchEditTagsSheet(
                                     Checkbox(
                                         checked = editArtwork,
                                         onCheckedChange = { enabled ->
+                                            HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.LIGHT)
                                             editArtwork = enabled
                                             if (!enabled) {
                                                 selectedImageUri = null
@@ -758,6 +770,8 @@ private fun BatchEditField(
     onValueChange: (String) -> Unit,
     keyboardType: KeyboardType = KeyboardType.Text
 ) {
+    val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -773,7 +787,10 @@ private fun BatchEditField(
         trailingIcon = {
             Checkbox(
                 checked = enabled,
-                onCheckedChange = onEnabledChange
+                onCheckedChange = {
+                    HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.LIGHT)
+                    onEnabledChange(it)
+                }
             )
         },
         enabled = enabled,

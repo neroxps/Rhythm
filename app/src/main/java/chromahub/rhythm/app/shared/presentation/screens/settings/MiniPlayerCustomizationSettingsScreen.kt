@@ -7,6 +7,9 @@
 
 package chromahub.rhythm.app.shared.presentation.screens.settings
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+
 
 
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
@@ -88,7 +91,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -526,7 +528,8 @@ fun MiniPlayerArtworkSizeSheet(
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     var tempSize by remember { mutableIntStateOf(currentSize) }
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = {
@@ -536,48 +539,23 @@ fun MiniPlayerArtworkSizeSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
     ) {
+        StandardBottomSheetHeader(
+            title = stringResource(R.string.settings_miniplayer_artwork_size),
+            subtitle = "${tempSize}dp",
+            visible = true
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = stringResource(R.string.settings_miniplayer_artwork_size),
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = CircleShape
-                            )
-                    ) {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            text = "${tempSize}dp",
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             Slider(
                 value = tempSize.toFloat(),
                 onValueChange = { tempSize = it.toInt() },
                 onValueChangeFinished = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                     onSizeSelected(tempSize)
                 },
                 valueRange = 40f..72f,
@@ -607,7 +585,8 @@ fun MiniPlayerCornerRadiusSheet(
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     var tempRadius by remember { mutableIntStateOf(currentRadius) }
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = {
@@ -617,48 +596,23 @@ fun MiniPlayerCornerRadiusSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
     ) {
+        StandardBottomSheetHeader(
+            title = stringResource(R.string.settings_miniplayer_corner_radius),
+            subtitle = "${tempRadius}dp",
+            visible = true
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = stringResource(R.string.settings_miniplayer_corner_radius),
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = CircleShape
-                            )
-                    ) {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            text = "${tempRadius}dp",
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             Slider(
                 value = tempRadius.toFloat(),
                 onValueChange = { tempRadius = it.toInt() },
                 onValueChangeFinished = {
-                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                    HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
                     onRadiusSelected(tempRadius)
                 },
                 valueRange = 0f..28f,

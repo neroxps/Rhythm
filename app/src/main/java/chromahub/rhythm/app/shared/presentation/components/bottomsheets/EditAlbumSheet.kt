@@ -4,6 +4,7 @@
  */
 
 package chromahub.rhythm.app.shared.presentation.components.bottomsheets
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
 
 import android.net.Uri
 import android.widget.Toast
@@ -458,17 +459,9 @@ fun EditAlbumSheet(
                                         )
                                     }
 
-                                    IconButton(
-                                        onClick = onDismiss,
-                                        enabled = !isSaving,
-                                        modifier = Modifier.size(44.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = RhythmIcons.Close,
-                                            contentDescription = stringResource(R.string.ui_close),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                    AdaptiveSheetCloseButton(
+                                        onClick = onDismiss
+                                    )
                                 }
 
                                 Surface(
@@ -579,7 +572,8 @@ fun EditAlbumSheet(
             }
         }
     } else {
-        ModalBottomSheet(
+        RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.TWO_PANE_DIALOG,
             modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
             onDismissRequest = { if (!isSaving) onDismiss() },
             sheetState = sheetState,
@@ -596,21 +590,22 @@ fun EditAlbumSheet(
                 StandardBottomSheetHeader(
                     title = stringResource(R.string.edit_album_title),
                     subtitle = stringResource(R.string.edit_album_desc),
-                    visible = true,
-                    modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
+                    visible = true
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                val scrollState = rememberScrollState()
 
-                Box(
+                AdaptiveSheetScrollContainer(
+                    scrollState = scrollState,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                ) {
+                ) { endPadding ->
                     Column(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .verticalScroll(rememberScrollState()),
+                            .padding(end = endPadding)
+                            .verticalScroll(scrollState),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Surface(

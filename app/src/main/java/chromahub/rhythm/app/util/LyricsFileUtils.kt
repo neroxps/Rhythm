@@ -49,7 +49,7 @@ object LyricsFileUtils {
                     ?.takeIf { it.isNotBlank() }
 
             if (!isSupportedLyricsDocument(mimeType, extension)) {
-                return LoadResult(errorMessage = "Please select a .lrc, .ttml, .json, or .txt lyrics file")
+                return LoadResult(errorMessage = "Please select a .lrc, .elrc, .ttml, .json, or .txt lyrics file")
             }
 
             val size = metadata.size

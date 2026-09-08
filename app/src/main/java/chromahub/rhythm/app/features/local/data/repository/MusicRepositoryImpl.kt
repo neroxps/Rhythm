@@ -426,7 +426,7 @@ class MusicRepository(context: Context) {
         val appSettings = AppSettings.getInstance(context)
         val artistSeparatorEnabled = appSettings.artistSeparatorEnabled.value
         val preloadedCharDelimiters: List<String> = if (artistSeparatorEnabled) {
-            appSettings.artistSeparatorDelimiters.value.toList().map { it.toString() }
+            chromahub.rhythm.app.util.ArtistSeparator.parseDelimiters(appSettings.artistSeparatorDelimiters.value)
         } else {
             emptyList()
         }
@@ -1021,7 +1021,8 @@ class MusicRepository(context: Context) {
     }
 
     private fun resolveStableDateAdded(filePath: String?, observedDateAddedMs: Long): Long {
-        val normalizedObservedDate = observedDateAddedMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+        val normalizedObservedDate = (if (observedDateAddedMs in 1..99_999_999_999L) observedDateAddedMs * 1000L else observedDateAddedMs)
+            .takeIf { it > 0L } ?: System.currentTimeMillis()
         val resolvedPath = filePath?.trim()?.takeIf { it.isNotBlank() } ?: return normalizedObservedDate
 
         val key = try {
@@ -1031,10 +1032,11 @@ class MusicRepository(context: Context) {
             return normalizedObservedDate
         }
 
-        val cachedDate = pendingDateAddedWrites[key] ?: dateAddedPrefs.getLong(key, -1L)
+        val rawCachedDate = pendingDateAddedWrites[key] ?: dateAddedPrefs.getLong(key, -1L)
+        val cachedDate = if (rawCachedDate in 1..99_999_999_999L) rawCachedDate * 1000L else rawCachedDate
         if (cachedDate > 0L) {
             val stableDate = minOf(cachedDate, normalizedObservedDate)
-            if (stableDate != cachedDate) {
+            if (stableDate != rawCachedDate) {
                 pendingDateAddedWrites[key] = stableDate
             }
             return stableDate
@@ -2013,7 +2015,9 @@ class MusicRepository(context: Context) {
                 val albumName = albumSongs.first().album.trim().ifBlank { "Unknown Album" }
                 val smartArtist = findBestAlbumArtist(albumSongs)
 
-                val albumId = "hash_${albumName.lowercase(Locale.ROOT)}|${smartArtist.lowercase(Locale.ROOT)}|${(groupKey.hashCode().toLong() and 0x7FFFFFFF)}"
+                val cleanAlbumName = albumName.lowercase(Locale.ROOT).replace('/', '_')
+                val cleanSmartArtist = smartArtist.lowercase(Locale.ROOT).replace('/', '_')
+                val albumId = "hash_${cleanAlbumName}|${cleanSmartArtist}|${(groupKey.hashCode().toLong() and 0x7FFFFFFF)}"
 
                 val year = albumSongs.maxOfOrNull { it.year } ?: 0
                 val dateModified = albumSongs.maxOfOrNull { it.dateModified } ?: System.currentTimeMillis()
@@ -2163,7 +2167,7 @@ class MusicRepository(context: Context) {
         val appSettings = AppSettings.getInstance(context)
         val artistSeparatorEnabled = appSettings.artistSeparatorEnabled.value
         val charDelimiters: List<String> = if (artistSeparatorEnabled) {
-            appSettings.artistSeparatorDelimiters.value.toList().map { it.toString() }
+            chromahub.rhythm.app.util.ArtistSeparator.parseDelimiters(appSettings.artistSeparatorDelimiters.value)
         } else {
             emptyList()
         }
@@ -2266,7 +2270,7 @@ class MusicRepository(context: Context) {
         val appSettings = AppSettings.getInstance(context)
         val artistSeparatorEnabled = appSettings.artistSeparatorEnabled.value
         val preloadedCharDelimiters: List<String> = if (artistSeparatorEnabled) {
-            appSettings.artistSeparatorDelimiters.value.toList().map { it.toString() }
+            chromahub.rhythm.app.util.ArtistSeparator.parseDelimiters(appSettings.artistSeparatorDelimiters.value)
         } else {
             emptyList()
         }
@@ -2329,8 +2333,7 @@ class MusicRepository(context: Context) {
      * Use this overload in hot loops to avoid reading AppSettings per call.
      */
     fun splitArtistNames(artistName: String, preloadedCharDelimiters: List<String>): List<String> {
-        val delimiters = preloadedCharDelimiters.joinToString("")
-        return chromahub.rhythm.app.util.ArtistSeparator.splitArtistNames(artistName, delimiters, preloadedCharDelimiters.isNotEmpty())
+        return chromahub.rhythm.app.util.ArtistSeparator.splitArtistNames(artistName, preloadedCharDelimiters, preloadedCharDelimiters.isNotEmpty())
     }
     
     /**
@@ -2427,6 +2430,12 @@ class MusicRepository(context: Context) {
         // Invalidate in-memory cache to force fresh query
         cachedSongs = null
         cacheTimestamp = 0L
+        try {
+            roomDb.artistDao().deleteAll()
+            roomDb.songArtistDao().deleteAll()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to clear artist cache on refresh", e)
+        }
         
         val songs = loadSongs(
             forceRefresh = true,
@@ -2567,7 +2576,7 @@ class MusicRepository(context: Context) {
             val appSettings = AppSettings.getInstance(context)
             val groupByAlbumArtist = appSettings.groupByAlbumArtist.value
             val preloadedCharDelimiters: List<String> = if (appSettings.artistSeparatorEnabled.value) {
-                appSettings.artistSeparatorDelimiters.value.toList().map { it.toString() }
+                chromahub.rhythm.app.util.ArtistSeparator.parseDelimiters(appSettings.artistSeparatorDelimiters.value)
             } else {
                 emptyList()
             }
@@ -3959,11 +3968,12 @@ class MusicRepository(context: Context) {
                     val parsedWordByWordLines = RhythmLyricsParser.parseWordByWordLyrics(wordByWordJson)
                     val lrc = RhythmLyricsParser.toLRCFormat(parsedWordByWordLines)
                     val plain = RhythmLyricsParser.toPlainText(parsedWordByWordLines)
-                    Log.d(TAG, "Successfully parsed embedded TTML lyrics (${parsedLines.size} lines)")
+                    val hasWordTiming = RhythmLyricsParser.hasWordTiming(parsedWordByWordLines)
+                    Log.d(TAG, "Successfully parsed embedded TTML lyrics (${parsedLines.size} lines, hasWordTiming=$hasWordTiming)")
                     return LyricsData(
                         plainLyrics = plain,
                         syncedLyrics = lrc,
-                        wordByWordLyrics = wordByWordJson,
+                        wordByWordLyrics = if (hasWordTiming) wordByWordJson else null,
                         source = "Embedded",
                         isCorrected = true
                     )
@@ -4055,12 +4065,16 @@ class MusicRepository(context: Context) {
                         
                         // Also extract plain text and line-synced LRC
                         val plainText = enhancedLines.joinToString("\n") { line: EnhancedLyricLine ->
-                            line.words.joinToString(" ") { word: EnhancedWord -> word.text }
+                            line.words.joinToString("") { word: EnhancedWord ->
+                                if (word.isPart && word.text.isNotEmpty()) word.text else " ${word.text}"
+                            }.trim()
                         }
                         
                         val syncedLrc = enhancedLines.joinToString("\n") { line: EnhancedLyricLine ->
                             val timestamp = formatLRCTimestamp(line.lineTimestamp)
-                            val text = line.words.joinToString(" ") { word: EnhancedWord -> word.text }
+                            val text = line.words.joinToString("") { word: EnhancedWord ->
+                                if (word.isPart && word.text.isNotEmpty()) word.text else " ${word.text}"
+                            }.trim()
                             "[$timestamp]$text"
                         }
                         
@@ -4153,7 +4167,9 @@ class MusicRepository(context: Context) {
 
         val wordByWordJson = convertEnhancedLRCToWordByWord(enhancedLines)
         val plainText = enhancedLines.joinToString("\n") { line ->
-            line.words.joinToString(" ") { it.text }
+            line.words.joinToString("") { word: EnhancedWord ->
+                if (word.isPart && word.text.isNotEmpty()) word.text else " ${word.text}"
+            }.trim()
         }
 
         Log.d(TAG, "Parsed ${wordTimestamps.size} word timestamps across ${enhancedLines.size} lines")
@@ -4635,8 +4651,9 @@ class MusicRepository(context: Context) {
                                 val parsedWordByWordLines = RhythmLyricsParser.parseWordByWordLyrics(wordByWordJson)
                                 val lrc = RhythmLyricsParser.toLRCFormat(parsedWordByWordLines)
                                 val plain = RhythmLyricsParser.toPlainText(parsedWordByWordLines)
-                                Log.d(TAG, "Better Lyrics: Syllable-synced lyrics found and parsed successfully")
-                                LyricsData(plain, lrc, wordByWordJson, "Better Lyrics", isCorrected = true)
+                                val hasWordTiming = RhythmLyricsParser.hasWordTiming(parsedWordByWordLines)
+                                Log.d(TAG, "Better Lyrics: TTML lyrics found and parsed successfully (hasWordTiming=$hasWordTiming)")
+                                LyricsData(plain, lrc, if (hasWordTiming) wordByWordJson else null, "Better Lyrics", isCorrected = true)
                             } else null
                         } else null
                     }
@@ -4987,7 +5004,9 @@ class MusicRepository(context: Context) {
                 val parsedTtml = RhythmLyricsParser.parseTtmlLyrics(lyricsResponse.ttmlContent)
                 if (parsedTtml.isNotEmpty()) {
                     content = parsedTtml
-                    isSyllable = true
+                    val wordByWordJson = Gson().toJson(parsedTtml)
+                    val parsedWordByWordLines = RhythmLyricsParser.parseWordByWordLyrics(wordByWordJson)
+                    isSyllable = RhythmLyricsParser.hasWordTiming(parsedWordByWordLines)
                 }
             }
 
@@ -5307,7 +5326,8 @@ class MusicRepository(context: Context) {
                     val parsedWordByWordLines = RhythmLyricsParser.parseWordByWordLyrics(wordByWordJson)
                     val lrc = RhythmLyricsParser.toLRCFormat(parsedWordByWordLines)
                     val plain = RhythmLyricsParser.toPlainText(parsedWordByWordLines)
-                    return LyricsData(plainLyrics = plain, syncedLyrics = lrc, wordByWordLyrics = wordByWordJson, source = "Local File", isCorrected = true)
+                    val hasWordTiming = RhythmLyricsParser.hasWordTiming(parsedWordByWordLines)
+                    return LyricsData(plainLyrics = plain, syncedLyrics = lrc, wordByWordLyrics = if (hasWordTiming) wordByWordJson else null, source = "Local File", isCorrected = true)
                 }
             }
 
@@ -5337,36 +5357,42 @@ class MusicRepository(context: Context) {
                         "[$timestamp]${line.text}"
                     }
                     
-                    val rhythmWordLines = semanticLyrics.text.map { line ->
-                        val words = line.words?.map { word ->
-                            val wordText = try {
-                                line.text.substring(word.charRange.first, word.charRange.last + 1)
-                            } catch (e: Exception) {
-                                ""
-                            }
-                            mapOf(
-                                "text" to wordText,
-                                "part" to false,
-                                "timestamp" to word.begin.toLong(),
-                                "endtime" to (word.endInclusive?.toLong() ?: word.begin.toLong())
+                    val hasWordTiming = semanticLyrics.text.any { line ->
+                        val words = line.words
+                        words != null && words.isNotEmpty() && (words.size > 1 || words.any { it.begin != line.start || (it.endInclusive != null && it.endInclusive != line.end) })
+                    }
+                    val wordByWordJson = if (hasWordTiming) {
+                        val rhythmWordLines = semanticLyrics.text.map { line ->
+                            val words = line.words?.map { word ->
+                                val wordText = try {
+                                    line.text.substring(word.charRange.first, word.charRange.last + 1)
+                                } catch (e: Exception) {
+                                    ""
+                                }
+                                mapOf(
+                                    "text" to wordText,
+                                    "part" to false,
+                                    "timestamp" to word.begin.toLong(),
+                                    "endtime" to (word.endInclusive?.toLong() ?: word.begin.toLong())
+                                )
+                            } ?: listOf(
+                                mapOf(
+                                    "text" to line.text,
+                                    "part" to false,
+                                    "timestamp" to line.start.toLong(),
+                                    "endtime" to line.end.toLong()
+                                )
                             )
-                        } ?: listOf(
+                            
                             mapOf(
-                                "text" to line.text,
-                                "part" to false,
+                                "text" to words,
+                                "background" to false,
                                 "timestamp" to line.start.toLong(),
                                 "endtime" to line.end.toLong()
                             )
-                        )
-                        
-                        mapOf(
-                            "text" to words,
-                            "background" to false,
-                            "timestamp" to line.start.toLong(),
-                            "endtime" to line.end.toLong()
-                        )
-                    }
-                    val wordByWordJson = com.google.gson.Gson().toJson(rhythmWordLines)
+                        }
+                        com.google.gson.Gson().toJson(rhythmWordLines)
+                    } else null
                     
                     LyricsData(plainLyrics, syncedLyrics, wordByWordJson, source = "Local File")
                 }
@@ -5392,7 +5418,8 @@ class MusicRepository(context: Context) {
                     val parsedWordByWordLines = RhythmLyricsParser.parseWordByWordLyrics(wordByWordJson)
                     val lrc = RhythmLyricsParser.toLRCFormat(parsedWordByWordLines)
                     val plain = RhythmLyricsParser.toPlainText(parsedWordByWordLines)
-                    return LyricsData(plainLyrics = plain, syncedLyrics = lrc, wordByWordLyrics = wordByWordJson, source = "Local File", isCorrected = true)
+                    val hasWordTiming = RhythmLyricsParser.hasWordTiming(parsedWordByWordLines)
+                    return LyricsData(plainLyrics = plain, syncedLyrics = lrc, wordByWordLyrics = if (hasWordTiming) wordByWordJson else null, source = "Local File", isCorrected = true)
                 }
             }
             
@@ -5423,12 +5450,16 @@ class MusicRepository(context: Context) {
                     
                     // Also extract plain text and line-synced LRC
                     val plainText = enhancedLines.joinToString("\n") { line: EnhancedLyricLine ->
-                        line.words.joinToString(" ") { word: EnhancedWord -> word.text }
+                        line.words.joinToString("") { word: EnhancedWord ->
+                            if (word.isPart && word.text.isNotEmpty()) word.text else " ${word.text}"
+                        }.trim()
                     }
                     
                     val syncedLrc = enhancedLines.joinToString("\n") { line: EnhancedLyricLine ->
                         val timestamp = formatLRCTimestamp(line.lineTimestamp)
-                        val text = line.words.joinToString(" ") { word: EnhancedWord -> word.text }
+                        val text = line.words.joinToString("") { word: EnhancedWord ->
+                            if (word.isPart && word.text.isNotEmpty()) word.text else " ${word.text}"
+                        }.trim()
                         "[$timestamp]$text"
                     }
                     
@@ -5828,8 +5859,11 @@ class MusicRepository(context: Context) {
         val appSettings = AppSettings.getInstance(context)
         val groupByAlbumArtist = appSettings.groupByAlbumArtist.value
         val artistSeparatorEnabled = appSettings.artistSeparatorEnabled.value
-        val delimiters = if (artistSeparatorEnabled) appSettings.artistSeparatorDelimiters.value else ""
-        val preloadedCharDelimiters = delimiters.map { it.toString() }
+        val preloadedCharDelimiters = if (artistSeparatorEnabled) {
+            chromahub.rhythm.app.util.ArtistSeparator.parseDelimiters(appSettings.artistSeparatorDelimiters.value)
+        } else {
+            emptyList()
+        }
 
         Log.d("MusicRepository", "Getting songs for artist ID: $artistId")
 
@@ -5871,8 +5905,11 @@ class MusicRepository(context: Context) {
         val appSettings = AppSettings.getInstance(context)
         val groupByAlbumArtist = appSettings.groupByAlbumArtist.value
         val artistSeparatorEnabled = appSettings.artistSeparatorEnabled.value
-        val delimiters = if (artistSeparatorEnabled) appSettings.artistSeparatorDelimiters.value else ""
-        val preloadedCharDelimiters = delimiters.map { it.toString() }
+        val preloadedCharDelimiters = if (artistSeparatorEnabled) {
+            chromahub.rhythm.app.util.ArtistSeparator.parseDelimiters(appSettings.artistSeparatorDelimiters.value)
+        } else {
+            emptyList()
+        }
 
         Log.d("MusicRepository", "Getting albums for artist ID: $artistId")
 
@@ -6196,7 +6233,7 @@ class MusicRepository(context: Context) {
             }
 
             // 1. Get the current count of eligible audio files in MediaStore to check for additions/deletions
-            val selection = MediaScanEngine.mediaScanSelection()
+            val selection = MediaScanEngine.mediaScanSelection(appSettings.minimumDuration.value)
             val countCursor = context.contentResolver.query(
                 collection,
                 arrayOf(MediaStore.Audio.Media._ID),

@@ -34,6 +34,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import chromahub.rhythm.app.shared.data.model.AppSettings
 import chromahub.rhythm.app.RhythmApplication
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 
 private sealed class SyncedLyricsItem {
@@ -50,27 +53,29 @@ private suspend fun LazyListState.animateToSyncedItemWithCatchUp(
     lastIndex: Int,
     noAnimation: Boolean = false
 ) {
+    if (lastIndex < 0) return
+    val safeTargetIndex = targetIndex.coerceIn(0, lastIndex)
     val currentIndex = firstVisibleItemIndex
-    val delta = abs(currentIndex - targetIndex)
+    val delta = abs(currentIndex - safeTargetIndex)
 
     if (noAnimation) {
-        scrollToItem(targetIndex, scrollOffset = scrollOffset)
+        scrollToItem(safeTargetIndex, scrollOffset = scrollOffset)
         return
     }
 
     if (delta >= LARGE_SCROLL_CATCH_UP_DELTA) {
-        val prePositionIndex = if (targetIndex > currentIndex) {
-            (targetIndex - 1).coerceAtLeast(0)
+        val prePositionIndex = if (safeTargetIndex > currentIndex) {
+            (safeTargetIndex - 1).coerceAtLeast(0)
         } else {
-            (targetIndex + 1).coerceAtMost(lastIndex)
+            (safeTargetIndex + 1).coerceAtMost(lastIndex)
         }
 
-        if (prePositionIndex != targetIndex) {
+        if (prePositionIndex != safeTargetIndex) {
             scrollToItem(prePositionIndex, scrollOffset = scrollOffset)
         }
     }
 
-    animateScrollToItem(targetIndex, scrollOffset = scrollOffset)
+    animateScrollToItem(safeTargetIndex, scrollOffset = scrollOffset)
 }
 
 private fun buildSyncedLyricsItems(lines: List<LyricLine>): List<SyncedLyricsItem> {
@@ -173,6 +178,7 @@ fun SyncedLyricsView(
     val appSettings = remember(context) { AppSettings.getInstance(context) }
     val lyricBoldVal by appSettings.lyricBold.collectAsState()
     val lyricNoAnimationVal by appSettings.lyricNoAnimation.collectAsState()
+    val tapLyricsToSeek by appSettings.tapLyricsToSeek.collectAsState()
 
     // Track previous line for smooth transitions
     val previousLineIndex = remember { mutableIntStateOf(-1) }
@@ -209,18 +215,61 @@ fun SyncedLyricsView(
         }
     }
 
+    // Pause auto-scrolling when user manually scrolls
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    var userScrolledRecently by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isDragged) {
+        if (isDragged) {
+            userScrolledRecently = true
+        } else if (userScrolledRecently) {
+            // Wait for any active fling deceleration to complete
+            snapshotFlow { listState.isScrollInProgress }
+                .first { !it }
+            delay(3500L)
+            userScrolledRecently = false
+        }
+    }
+
+    // Reset user scroll lock and tracked line index on lyrics or song change
+    LaunchedEffect(lyrics, parsedLyricsInput) {
+        previousLineIndex.intValue = -1
+        userScrolledRecently = false
+    }
+
     // Enhanced auto-scroll with spring animation
-    LaunchedEffect(currentLineIndex) {
-        if (currentLineIndex >= 0 && parsedLyrics.isNotEmpty() && currentLineIndex != previousLineIndex.intValue) {
-            previousLineIndex.intValue = currentLineIndex
-            val offset = listState.layoutInfo.viewportSize.height / 3
-            val targetItemIndex = lineToItemIndex[currentLineIndex] ?: currentLineIndex
-            listState.animateToSyncedItemWithCatchUp(
-                targetIndex = targetItemIndex,
-                scrollOffset = -offset,
-                lastIndex = lyricsItems.lastIndex,
-                noAnimation = lyricNoAnimationVal
-            )
+    LaunchedEffect(currentLineIndex, userScrolledRecently) {
+        if (currentLineIndex >= 0 && parsedLyrics.isNotEmpty()) {
+            val isIndexChange = currentLineIndex != previousLineIndex.intValue
+            // If user explicitly jumped/seeked (jump > 1 line), override scroll lock
+            if (isIndexChange && abs(currentLineIndex - previousLineIndex.intValue) > 1) {
+                userScrolledRecently = false
+            }
+
+            if (!userScrolledRecently) {
+                previousLineIndex.intValue = currentLineIndex
+                val offset = listState.layoutInfo.viewportSize.height / 3
+                val targetItemIndex = (lineToItemIndex[currentLineIndex] ?: currentLineIndex)
+                    .coerceIn(0, lyricsItems.lastIndex.coerceAtLeast(0))
+                if (lyricsItems.isNotEmpty()) {
+                    listState.animateToSyncedItemWithCatchUp(
+                        targetIndex = targetItemIndex,
+                        scrollOffset = -offset,
+                        lastIndex = lyricsItems.lastIndex,
+                        noAnimation = lyricNoAnimationVal
+                    )
+                }
+            }
+        }
+    }
+
+    val handleSeek: (Long) -> Unit = remember(onSeek, tapLyricsToSeek) {
+        { timestamp ->
+            userScrolledRecently = false
+            previousLineIndex.intValue = -1
+            if (tapLyricsToSeek) {
+                onSeek?.invoke(timestamp)
+            }
         }
     }
 
@@ -259,7 +308,21 @@ fun SyncedLyricsView(
             },
             contentPadding = PaddingValues(vertical = 30.dp)
         ) {
-            itemsIndexed(lyricsItems) { _, item ->
+            itemsIndexed(
+                items = lyricsItems,
+                key = { index, item ->
+                    when (item) {
+                        is SyncedLyricsItem.Line -> "synced_line_${item.line.timestamp}_${item.index}"
+                        is SyncedLyricsItem.Gap -> "synced_gap_${item.startTime}_${item.duration}_$index"
+                    }
+                },
+                contentType = { _, item ->
+                    when (item) {
+                        is SyncedLyricsItem.Line -> "synced_line"
+                        is SyncedLyricsItem.Gap -> "synced_gap"
+                    }
+                }
+            ) { _, item ->
                 when (item) {
                     is SyncedLyricsItem.Line -> {
                         SyncedLyricItem(
@@ -268,7 +331,7 @@ fun SyncedLyricsView(
                             currentLineIndex = currentLineIndex,
                             currentPlaybackTime = adjustedPlaybackTime,
                             parsedLyrics = parsedLyrics,
-                            onSeek = onSeek,
+                            onSeek = handleSeek,
                             showTranslation = showTranslation,
                             showRomanization = showRomanization,
                             textSizeMultiplier = textSizeMultiplier,

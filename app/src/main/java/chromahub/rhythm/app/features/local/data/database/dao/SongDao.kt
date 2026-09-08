@@ -21,7 +21,7 @@ interface SongDao {
     fun getAllSongsFlow(): kotlinx.coroutines.flow.Flow<List<SongEntity>>
 
     @Query("SELECT * FROM songs WHERE duration >= :minDurationMs ORDER BY title ASC")
-    fun getSongsFilteredFlow(minDurationMs: Long = 10000L): kotlinx.coroutines.flow.Flow<List<SongEntity>>
+    fun getSongsFilteredFlow(minDurationMs: Long = 0L): kotlinx.coroutines.flow.Flow<List<SongEntity>>
 
     @Query("SELECT * FROM songs ORDER BY title ASC")
     fun getSongsPagingSource(): androidx.paging.PagingSource<Int, SongEntity>

@@ -4,6 +4,7 @@
  */
 
 package chromahub.rhythm.app.shared.presentation.components.bottomsheets
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
 
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.Icon
@@ -41,7 +42,10 @@ fun ArtistChooserBottomSheet(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
     )
-    ModalBottomSheet(
+    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.AUTO_DIALOG,
+        lazyListState = lazyListState,
         modifier = modifier.widthIn(max = 640.dp).fillMaxWidth(),
         onDismissRequest = onDismiss,
         sheetState = chooserSheetState,
@@ -55,18 +59,10 @@ fun ArtistChooserBottomSheet(
         contentColor = MaterialTheme.colorScheme.onBackground,
         tonalElevation = 0.dp
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp)
-                .padding(bottom = 32.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.playerscreen_select_artist),
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 20.dp)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            StandardBottomSheetHeader(
+                title = stringResource(R.string.playerscreen_select_artist),
+                visible = true
             )
 
             val artistArtShape = rememberExpressiveShapeFor(
@@ -74,76 +70,85 @@ fun ArtistChooserBottomSheet(
                 fallbackShape = RoundedCornerShape(12.dp)
             )
 
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                itemsIndexed(candidateArtists) { index, artist ->
-                    val itemShape = when (candidateArtists.size) {
-                        1 -> RoundedCornerShape(24.dp)
-                        else -> when (index) {
-                            0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 6.dp, bottomEnd = 6.dp)
-                            candidateArtists.size - 1 -> RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                            else -> RoundedCornerShape(6.dp)
+            AdaptiveSheetScrollContainer(
+                lazyListState = lazyListState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+            ) { endPadding ->
+                LazyColumn(
+                    state = lazyListState,
+                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp + endPadding, top = 4.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    itemsIndexed(candidateArtists) { index, artist ->
+                        val itemShape = when (candidateArtists.size) {
+                            1 -> RoundedCornerShape(24.dp)
+                            else -> when (index) {
+                                0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 6.dp, bottomEnd = 6.dp)
+                                candidateArtists.size - 1 -> RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                                else -> RoundedCornerShape(6.dp)
+                            }
                         }
-                    }
 
-                    Card(
-                        onClick = {
-                            HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
-                            onArtistSelected(artist)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        shape = itemShape,
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Card(
+                            onClick = {
+                                HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
+                                onArtistSelected(artist)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            shape = itemShape,
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                         ) {
-                            Surface(
-                                shape = artistArtShape,
-                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                modifier = Modifier.size(56.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                chromahub.rhythm.app.util.M3ImageUtils.ArtistImage(
-                                    imageUrl = artist.artworkUri,
-                                    artistName = artist.name,
-                                    modifier = Modifier.fillMaxSize(),
-                                    applyExpressiveShape = false
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(16.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = artist.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Surface(
-                                modifier = Modifier.size(36.dp),
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                tonalElevation = 0.dp
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = RhythmIcons.Forward,
-                                        contentDescription = stringResource(R.string.playerscreen_open_artist),
-                                        modifier = Modifier.size(20.dp)
+                                Surface(
+                                    shape = artistArtShape,
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    modifier = Modifier.size(56.dp)
+                                ) {
+                                    chromahub.rhythm.app.util.M3ImageUtils.ArtistImage(
+                                        imageUrl = artist.artworkUri,
+                                        artistName = artist.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        applyExpressiveShape = false
                                     )
+                                }
+
+                                Spacer(modifier = Modifier.width(16.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = artist.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Surface(
+                                    modifier = Modifier.size(36.dp),
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    tonalElevation = 0.dp
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = RhythmIcons.Forward,
+                                            contentDescription = stringResource(R.string.playerscreen_open_artist),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

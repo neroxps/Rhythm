@@ -614,17 +614,18 @@ object MediaUtils {
                     val mimeTypeIndex =
                         cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
                     val songIdIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-
                     filePath = cursor.getString(dataIndex) ?: ""
                     fileSize = cursor.getLong(sizeIndex)
-                    val mediaStoreDateAdded = cursor.getLong(dateAddedIndex) * 1000 // Convert to milliseconds
+                    val rawDateAdded = cursor.getLong(dateAddedIndex)
+                    val mediaStoreDateAdded = if (rawDateAdded in 1..99_999_999_999L) rawDateAdded * 1000L else rawDateAdded
+                    val normalizedSongDateAdded = if (dateAdded in 1..99_999_999_999L) dateAdded * 1000L else dateAdded
                     dateAdded = when {
-                        dateAdded > 0L && mediaStoreDateAdded > 0L -> minOf(dateAdded, mediaStoreDateAdded)
+                        normalizedSongDateAdded > 0L && mediaStoreDateAdded > 0L -> minOf(normalizedSongDateAdded, mediaStoreDateAdded)
                         mediaStoreDateAdded > 0L -> mediaStoreDateAdded
-                        else -> dateAdded
+                        else -> normalizedSongDateAdded
                     }
-                    dateModified =
-                        cursor.getLong(dateModifiedIndex) * 1000 // Convert to milliseconds
+                    val rawDateModified = cursor.getLong(dateModifiedIndex)
+                    dateModified = if (rawDateModified in 1..99_999_999_999L) rawDateModified * 1000L else rawDateModified
                     composer = cursor.getString(composerIndex) ?: ""
                     albumArtist = if (albumArtistIndex != -1) cursor.getString(albumArtistIndex) ?: "" else ""
                     year = cursor.getInt(yearIndex)
