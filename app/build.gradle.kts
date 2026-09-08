@@ -91,6 +91,27 @@ android {
             
             versionNameSuffix = "-gh"
         }
+        
+        // Beta test build: separate applicationId (chromahub.rhythm.app.beta)
+        // and app label "Rhythm Beta" so it can coexist with the installed
+        // release build and never overwrite it. Used for testing new features
+        // (e.g. Emby audiobook mode + streaming recovery) before release.
+        create("beta") {
+            dimension = "distribution"
+            applicationId = "chromahub.rhythm.app.beta"
+            
+            // Same feature set as GitHub release for representative testing.
+            buildConfigField("boolean", "ENABLE_YOUTUBE_MUSIC", "true")
+            buildConfigField("boolean", "ENABLE_LYRICALLY_API", "true")
+            buildConfigField("boolean", "ENABLE_DEEZER", "true")
+            buildConfigField("boolean", "ENABLE_LRCLIB", "true")
+            buildConfigField("boolean", "ENABLE_BETTERLYRICS", "true")
+            buildConfigField("boolean", "ENABLE_SPOTIFY_SEARCH", "true")
+            buildConfigField("boolean", "ENABLE_WIKIPEDIA", "true")
+            buildConfigField("String", "FLAVOR", "\"beta\"")
+            
+            versionNameSuffix = "-beta"
+        }
     }
 
     val signingProperties = getProperties(".config/keystore.properties")

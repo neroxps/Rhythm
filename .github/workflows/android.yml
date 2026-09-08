@@ -86,7 +86,7 @@ jobs:
     - name: Build with Gradle (GitHub flavor only)
       env:
         APPLE_MUSIC_FALLBACK_TOKEN: ${{ secrets.APPLE_MUSIC_FALLBACK_TOKEN }}
-      run: ./gradlew assembleGithubRelease assembleGithubDebug
+      run: ./gradlew assembleGithubRelease assembleGithubDebug assembleBetaRelease
 
     - name: Generate build info
       if: github.event_name == 'pull_request'
@@ -103,5 +103,6 @@ jobs:
         path: |
           app/build/outputs/apk/github/release/*.apk
           app/build/outputs/apk/github/debug/*.apk
+          app/build/outputs/apk/beta/release/*.apk
           build_info.txt
         retention-days: 14

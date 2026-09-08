@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Beta test build label: coexists with the release build (separate applicationId). -->
+    <string name="app_name">Rhythm Beta</string>
+</resources>
