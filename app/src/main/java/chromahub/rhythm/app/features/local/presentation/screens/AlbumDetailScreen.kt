@@ -952,7 +952,7 @@ fun AlbumDetailScreen(
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
-                                                    imageVector = MaterialSymbolIcon("menu_book"),
+                                                    imageVector = RhythmIcons.Audiobook,
                                                     contentDescription = stringResource(R.string.album_mark_audiobook),
                                                     tint = if (isAudiobook) {
                                                         MaterialTheme.colorScheme.onPrimaryContainer
