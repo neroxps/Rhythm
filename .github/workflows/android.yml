@@ -73,14 +73,25 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Create private.properties for build
+    - name: Create files for signing (fixed key so test APKs can be upgraded in place)
       env:
+        SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+        SIGNING_PROPERTIES: ${{ secrets.SIGNING_PROPERTIES }}
         PRIVATE_PROPERTIES: ${{ secrets.PRIVATE_PROPERTIES }}
       run: |
+        mkdir -p config/signing
+        mkdir -p .config
+        # Decode keystore and signing property files if secrets are available
+        if [ -n "$SIGNING_KEYSTORE" ]; then
+          printf '%s' "$SIGNING_KEYSTORE" | base64 -di > ./config/signing/rhythm_keystore.jks
+        fi
+        if [ -n "$SIGNING_PROPERTIES" ]; then
+          printf '%s' "$SIGNING_PROPERTIES" | base64 -di > ./.config/keystore.properties
+        fi
         if [ -n "$PRIVATE_PROPERTIES" ]; then
-          printf '%s' "$PRIVATE_PROPERTIES" | base64 -di > ./private.properties
+          printf '%s' "$PRIVATE_PROPERTIES" | base64 -di > ./config/signing/private.properties
         else
-          touch ./private.properties
+          touch ./config/signing/private.properties
         fi
 
     - name: Build with Gradle (GitHub flavor only)
