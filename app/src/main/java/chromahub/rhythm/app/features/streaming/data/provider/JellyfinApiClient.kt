@@ -18,7 +18,6 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import org.json.JSONArray
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import androidx.core.content.edit
