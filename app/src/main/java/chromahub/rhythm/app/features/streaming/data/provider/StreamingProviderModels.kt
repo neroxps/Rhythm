@@ -24,8 +24,30 @@ data class ProviderSong(
     val bitrate: Int? = null,
     val sampleRate: Int? = null,
     val channels: Int? = null,
-    val codec: String? = null
-)
+    val codec: String? = null,
+    val itemType: String? = null,
+    val parentIndexNumber: Int? = null,
+    val userData: ProviderUserData? = null
+) {
+    /** True when this item is an audiobook / audio-book chapter. */
+    fun isBookType(): Boolean =
+        chromahub.rhythm.app.features.streaming.domain.model.StreamingItemType.isBookType(itemType)
+}
+
+/**
+ * Server-side user data mirror (subset of Jellyfin/Emby UserData) used for
+ * audiobook resume: ticks are converted to milliseconds by the mapper.
+ */
+data class ProviderUserData(
+    val playbackPositionTicks: Long = 0L,
+    val playedPercentage: Double = 0.0,
+    val played: Boolean = false,
+    val hasPlayed: Boolean = false
+) {
+    /** Resume position in milliseconds (ticks -> ms). */
+    val positionMs: Long
+        get() = playbackPositionTicks.coerceAtLeast(0L) / 10_000L
+}
 
 /**
  * Lightweight playlist model used by provider API clients before mapping to UI/domain models.
@@ -50,8 +72,13 @@ data class ProviderAlbum(
     val artworkUrl: String? = null,
     val songCount: Int = 0,
     val year: Int? = null,
-    val description: String? = null
-)
+    val description: String? = null,
+    val itemType: String? = null
+) {
+    /** True when this album is an audiobook (folder/collection of book type). */
+    fun isBookType(): Boolean =
+        chromahub.rhythm.app.features.streaming.domain.model.StreamingItemType.isBookType(itemType)
+}
 
 /**
  * Lightweight artist model used by provider API clients before mapping to UI/domain models.

@@ -27,7 +27,10 @@ data class StreamingAlbum(
     val label: String? = null,
     val copyright: String? = null,
     val isExplicit: Boolean = false,
-    val tracks: List<StreamingSong> = emptyList()
+    val tracks: List<StreamingSong> = emptyList(),
+    val itemType: String? = null,
+    /** Server folder/item type is a book (audiobook): playback is sequential. */
+    val isAudiobook: Boolean = false
 ) : AlbumItem {
     
     override suspend fun getSongs(): List<PlayableItem> = tracks

@@ -272,4 +272,24 @@ interface StreamingMusicRepository : MusicRepository {
      * Returns 0 when there is none (start from the beginning).
      */
     suspend fun getResumePosition(songId: String): Long
+
+    /**
+     * Resolve the audiobook resume target for the given book (album/container)
+     * id. Returns the chapter index inside [chapters] plus the offset (ms) to
+     * seek within that chapter, based on each chapter's server UserData
+     * (PlaybackPositionTicks / PlayedPercentage). Returns index 0 with 0 offset
+     * when the book has no saved progress.
+     */
+    suspend fun getBookResumeTarget(
+        bookId: String,
+        chapters: List<StreamingSong>
+    ): BookResumeTarget
+
+    /**
+     * Data class describing where an audiobook should resume.
+     */
+    data class BookResumeTarget(
+        val chapterIndex: Int,
+        val positionMs: Long
+    )
 }

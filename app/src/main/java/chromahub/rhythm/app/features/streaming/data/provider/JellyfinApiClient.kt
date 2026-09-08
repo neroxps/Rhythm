@@ -304,6 +304,9 @@ class JellyfinApiClient(context: Context) {
                     params["ParentId"] = albumId
                     params["SortBy"] = "ParentIndexNumber,IndexNumber,SortName"
                     params["SortOrder"] = "Ascending"
+                    // Books: include AudioBook/Book children (chapter items) as well
+                    // as plain Audio; the parser detects the item type per item.
+                    params["IncludeItemTypes"] = "Audio,AudioBook,Book"
 
                     val response = requestJson("/Users/${cred.userId}/Items", params).getOrThrow()
                     val pageSongs = parseAudioItems(response)
@@ -336,6 +339,32 @@ class JellyfinApiClient(context: Context) {
         return requestJson("/Users/${cred.userId}/Items/$albumId", params).map { response ->
             parseAlbumItem(response)
                 ?: throw IllegalStateException("Album not found for id=$albumId")
+        }
+    }
+
+    /**
+     * Fetch direct children of a book item (audiobook chapters). Books are
+     * usually a single item with chapters or an item with audio children;
+     * the generic album fetch already covers the chapter case because it
+     * requests ParentId + the book's IncludeItemTypes, but this explicit
+     * variant lets callers request the raw book container itself.
+     *
+     * Returns the container item (e.g. an "AudioBook" folder item) so callers
+     * can detect book mode even when the child items are plain Audio.
+     */
+    suspend fun getContainerById(itemId: String): Result<ProviderAlbum> {
+        val cred = credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
+        if (itemId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Item id is required"))
+        }
+
+        val params = mapOf(
+            "Fields" to "Overview,Genres,ArtistItems,Artists,AlbumArtist,ProductionYear,ImageTags,RunTimeTicks,ParentId,ItemCounts,UserData"
+        )
+
+        return requestJson("/Users/${cred.userId}/Items/$itemId", params).map { response ->
+            parseAlbumItem(response)
+                ?: throw IllegalStateException("Item not found for id=$itemId")
         }
     }
 
@@ -912,7 +941,34 @@ class JellyfinApiClient(context: Context) {
             put("IncludeItemTypes", "Audio")
             put("MediaTypes", "Audio")
             put("Recursive", "true")
-            put("Fields", "MediaSources,Genres,Path,Artists,AlbumArtist,AlbumId,Album,RunTimeTicks,ProductionYear,UserData,ParentId")
+            put("Fields", "MediaSources,Genres,Path,Artists,AlbumArtist,AlbumId,Album,RunTimeTicks,ProductionYear,UserData,ParentId,IndexNumber,ParentIndexNumber")
+            put("enableUserData", "true")
+            put("SortBy", "SortName")
+            put("SortOrder", "Ascending")
+            put("Limit", limit.coerceIn(1, 500).toString())
+            if (startIndex > 0) {
+                put("StartIndex", startIndex.toString())
+            }
+        }
+    }
+
+    /**
+     * Browse params for audiobook libraries: includes book container types so
+     * the AudioBook/Book item type reaches the parser and book mode triggers.
+     */
+    private fun buildBookBrowseParams(
+        query: String?,
+        limit: Int,
+        startIndex: Int = 0
+    ): Map<String, String> {
+        return buildMap {
+            if (!query.isNullOrBlank()) {
+                put("SearchTerm", query)
+            }
+            put("IncludeItemTypes", "AudioBook,Book,MusicAlbum,Audio")
+            put("MediaTypes", "Audio")
+            put("Recursive", "true")
+            put("Fields", "MediaSources,Genres,Path,Artists,AlbumArtist,AlbumId,Album,RunTimeTicks,ProductionYear,UserData,ParentId,IndexNumber,ParentIndexNumber")
             put("enableUserData", "true")
             put("SortBy", "SortName")
             put("SortOrder", "Ascending")
@@ -976,6 +1032,18 @@ class JellyfinApiClient(context: Context) {
                 val hasSongPrimary = song.optJSONObject("ImageTags")?.has("Primary") == true
                 val imageItemId = if (hasSongPrimary) id else (songAlbumId ?: id)
 
+                val itemTypeVal = song.optString("Type", null)?.takeIf { it.isNotBlank() }
+                val parentIndexVal = song.optInt("ParentIndexNumber", -1).takeIf { it >= 0 }
+                val userDataJson = song.optJSONObject("UserData")
+                val providerUserData = if (userDataJson != null) {
+                    ProviderUserData(
+                        playbackPositionTicks = userDataJson.optLong("PlaybackPositionTicks", 0L),
+                        playedPercentage = userDataJson.optDouble("PlayedPercentage", 0.0),
+                        played = userDataJson.optBoolean("Played", false),
+                        hasPlayed = userDataJson.optBoolean("Played", false)
+                    )
+                } else null
+
                 add(
                     ProviderSong(
                         providerId = id,
@@ -993,7 +1061,10 @@ class JellyfinApiClient(context: Context) {
                         bitrate = bitrateVal,
                         sampleRate = sampleRateVal,
                         channels = channelsVal,
-                        codec = codecVal
+                        codec = codecVal,
+                        itemType = itemTypeVal,
+                        parentIndexNumber = parentIndexVal,
+                        userData = providerUserData
                     )
                 )
             }
@@ -1122,7 +1193,8 @@ class JellyfinApiClient(context: Context) {
                 ?: album.optInt("SongCount").takeIf { it > 0 }
                 ?: album.optInt("ChildCount", 0),
             year = album.optInt("ProductionYear").takeIf { it > 0 },
-            description = album.optString("Overview").takeIf { it.isNotBlank() }
+            description = album.optString("Overview").takeIf { it.isNotBlank() },
+            itemType = album.optString("Type", null)?.takeIf { it.isNotBlank() }
         )
     }
 

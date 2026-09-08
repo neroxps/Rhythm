@@ -27,6 +27,7 @@ import chromahub.rhythm.app.features.streaming.domain.model.StreamingArtist
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingPlaylist
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingServiceId
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
+import chromahub.rhythm.app.features.streaming.domain.model.BookResumeSelector
 import chromahub.rhythm.app.features.streaming.domain.repository.StreamingMusicRepository
 import chromahub.rhythm.app.shared.data.model.AppSettings
 import chromahub.rhythm.app.network.NetworkClient
@@ -646,6 +647,36 @@ class StreamingMusicRepositoryImpl(
                 jellyfinClient.getPlaybackPosition(providerId).getOrNull() ?: 0L
             else -> 0L
         }
+    }
+
+    override suspend fun getBookResumeTarget(
+        bookId: String,
+        chapters: List<StreamingSong>
+    ): BookResumeTarget {
+        if (chapters.isEmpty()) return BookResumeTarget(0, 0L)
+
+        // 1) Pure policy: last unfinished chapter with a saved position wins.
+        val selection = BookResumeSelector.select(chapters)
+        if (selection.chapterIndex > 0 || selection.positionMs > 0L) {
+            return BookResumeTarget(selection.chapterIndex, selection.positionMs)
+        }
+
+        val decodedId = decodeAlbumId(bookId)
+
+        // 2) Fallback: single-item books store the whole-book position on the
+        //    container; any chapter-level progress missing means we ask the
+        //    server for it.
+        if (decodedId != null && !decodedId.isLegacy) {
+            val containerPositionMs = decodedId.providerAlbumId
+                ?.let { jellyfinClient.getPlaybackPosition(it).getOrNull() }
+                ?: 0L
+            if (containerPositionMs > 0L) {
+                return BookResumeTarget(0, containerPositionMs)
+            }
+        }
+
+        // 3) No progress anywhere: start from the beginning.
+        return BookResumeTarget(0, 0L)
     }
 
     /**
@@ -1531,7 +1562,18 @@ class StreamingMusicRepositoryImpl(
             bitrate = providerSong.bitrate,
             sampleRate = providerSong.sampleRate,
             channels = providerSong.channels,
-            codec = providerSong.codec
+            codec = providerSong.codec,
+            itemType = providerSong.itemType,
+            parentIndexNumber = providerSong.parentIndexNumber,
+            userData = providerSong.userData?.let {
+                StreamingUserData(
+                    positionMs = it.positionMs,
+                    playedPercentage = it.playedPercentage,
+                    played = it.played,
+                    lastPlayedMs = 0L,
+                    hasPlayed = it.hasPlayed
+                )
+            }
         )
     }
 
@@ -1589,6 +1631,7 @@ class StreamingMusicRepositoryImpl(
             .groupBy { song -> song.albumId ?: buildLegacyAlbumId(serviceId, song.artist, song.album) }
             .map { (albumKey, tracks) ->
                 val firstSong = tracks.first()
+                val isBookAlbum = tracks.any { it.isBookType() }
                 StreamingAlbum(
                     id = albumKey,
                     title = firstSong.album,
@@ -1596,7 +1639,9 @@ class StreamingMusicRepositoryImpl(
                     artworkUri = tracks.firstNotNullOfOrNull { it.artworkUri },
                     songCount = tracks.size,
                     year = firstSong.releaseDate?.take(4)?.toIntOrNull(),
-                    sourceType = serviceToSourceType(serviceId)
+                    sourceType = serviceToSourceType(serviceId),
+                    itemType = if (isBookAlbum) firstSong.itemType else null,
+                    isAudiobook = isBookAlbum
                 )
             }
             .sortedWith(compareBy<StreamingAlbum> { it.title.lowercase() }.thenBy { it.artist.lowercase() })
@@ -1617,7 +1662,9 @@ class StreamingMusicRepositoryImpl(
             genres = emptyList(),
             label = null,
             copyright = null,
-            isExplicit = false
+            isExplicit = false,
+            itemType = providerAlbum.itemType,
+            isAudiobook = providerAlbum.isBookType()
         )
     }
 

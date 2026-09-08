@@ -35,7 +35,8 @@ data class Song(
     val channels: Int? = null, // Number of audio channels (1=mono, 2=stereo, 6=5.1, etc.)
     val codec: String? = null, // Audio codec (AAC, MP3, FLAC, etc.)
     val discNumber: Int = 1, // Multi-disc support
-    val path: String? = null
+    val path: String? = null,
+    val isAudiobook: Boolean = false // True for audiobook chapters (sequential playback, server-resume)
 ) : Parcelable {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -63,6 +64,7 @@ data class Song(
         if (!Objects.equals(codec, other.codec)) return false
         if (discNumber != other.discNumber) return false
         if (path != other.path) return false
+        if (isAudiobook != other.isAudiobook) return false
 
         return true
     }
@@ -88,7 +90,8 @@ data class Song(
             channels,
             codec,
             discNumber,
-            path
+            path,
+            isAudiobook
         )
     }
 }

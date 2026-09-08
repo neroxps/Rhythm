@@ -15,6 +15,7 @@ import chromahub.rhythm.app.core.utils.NetworkUtils
 import chromahub.rhythm.app.features.streaming.data.repository.StreamingMusicRepositoryImpl
 import chromahub.rhythm.app.features.streaming.data.repository.StreamingServiceSession
 import chromahub.rhythm.app.features.streaming.data.repository.StreamingServiceSessionRepository
+import chromahub.rhythm.app.features.streaming.data.store.BookSessionStore
 import chromahub.rhythm.app.features.streaming.di.StreamingMusicModule
 import chromahub.rhythm.app.features.streaming.domain.model.BrowseCategory
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingAlbum
@@ -23,7 +24,10 @@ import chromahub.rhythm.app.features.streaming.domain.model.StreamingPlaylist
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingServiceId
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingServiceRules
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingItemType
+import chromahub.rhythm.app.features.streaming.domain.model.AudiobookChapterOrder
 import chromahub.rhythm.app.features.streaming.infrastructure.notification.StreamingNotificationManager
+import chromahub.rhythm.app.features.streaming.domain.repository.StreamingMusicRepository
 import chromahub.rhythm.app.shared.data.model.AppSettings
 import chromahub.rhythm.app.util.ArtistSeparator
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -283,6 +287,15 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
     // Queue
     private val _queue = MutableStateFlow<List<StreamingSong>>(emptyList())
     val queue: StateFlow<List<StreamingSong>> = _queue.asStateFlow()
+
+    // Audiobook (book) mode: sequential playback, no shuffle, server-resume.
+    private val _isAudiobookMode = MutableStateFlow(false)
+    val isAudiobookMode: StateFlow<Boolean> = _isAudiobookMode.asStateFlow()
+
+    private val _lastBookSessions = MutableStateFlow<List<BookSessionStore.BookSession>>(emptyList())
+    val lastBookSessions: StateFlow<List<BookSessionStore.BookSession>> = _lastBookSessions.asStateFlow()
+    
+    private val bookSessionStore: BookSessionStore by lazy { BookSessionStore(getApplication()) }
     
     // Search state
     private val _searchQuery = MutableStateFlow("")
@@ -345,6 +358,11 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
                     }
                 }
             }
+        }
+
+        // Load saved audiobook sessions for the "Continue listening" card.
+        viewModelScope.launch {
+            _lastBookSessions.value = bookSessionStore.getBookSessions()
         }
 
         viewModelScope.launch {
@@ -1017,25 +1035,37 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
                 return@launch
             }
             val shouldPinStart = pinStartIndex || (shuffle && safeStartIndex > 0)
-            val queueToPlay = if (shuffle && playableQueue.size > 1) {
+            // Audiobook detection: any book-type track forces sequential playback
+            // (chapters ordered by ParentIndexNumber/IndexNumber, no shuffle).
+            val isBookQueue = playableQueue.any { it.isBookType() } ||
+                playableQueue.any { it.itemType?.let { t -> StreamingItemType.isBookType(t) } == true }
+            val effectiveShuffle = shuffle && !isBookQueue
+
+            val orderedQueue = if (isBookQueue) {
+                playableQueue.sortedWith(audiobookChapterComparator())
+            } else {
+                playableQueue
+            }
+
+            val queueToPlay = if (effectiveShuffle && orderedQueue.size > 1) {
                 if (shouldPinStart) {
-                    val startSong = playableQueue[safeStartIndex]
-                    val tail = playableQueue.toMutableList().apply {
+                    val startSong = orderedQueue[safeStartIndex]
+                    val tail = orderedQueue.toMutableList().apply {
                         removeAt(safeStartIndex)
                         shuffle()
                     }
                     listOf(startSong) + tail
                 } else {
-                    playableQueue.shuffled()
+                    orderedQueue.shuffled()
                 }
             } else {
-                playableQueue
+                orderedQueue
             }
 
-            val selectedIndex = if (shuffle && queueToPlay.size > 1) {
+            val selectedIndex = if (effectiveShuffle && queueToPlay.size > 1) {
                 0
             } else {
-                safeStartIndex
+                safeStartIndex.coerceIn(0, queueToPlay.lastIndex)
             }
 
             val selectedSong = queueToPlay[selectedIndex]
@@ -1066,12 +1096,46 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
                 return@launch
             }
 
+            _isAudiobookMode.value = isBookQueue
             _queue.value = queueWithResolvedSongs
             _currentSong.value = selectedResolvedSong
             _isPlaying.value = true
 
             playbackHandler?.invoke(queueWithResolvedSongs, selectedIndex)
+
+            // Record the audiobook session for the "Continue listening" card,
+            // then seek to the server-saved chapter position.
+            if (isBookQueue && !appSettings.offlineMode.value) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        val chapterId = selectedResolvedSong.externalId ?: selectedResolvedSong.id
+                        val bookId = selectedResolvedSong.albumId ?: selectedResolvedSong.id
+                        val resume = repository.getBookResumeTarget(bookId, queueWithResolvedSongs)
+                        if (resume.chapterIndex in queueWithResolvedSongs.indices) {
+                            bookSessionStore.saveSession(
+                                BookSessionStore.BookSession(
+                                    bookId = bookId,
+                                    title = selectedResolvedSong.album,
+                                    author = selectedResolvedSong.albumArtist ?: selectedResolvedSong.artist,
+                                    artworkUrl = selectedResolvedSong.artworkUri,
+                                    chapterId = chapterId,
+                                    chapterIndex = resume.chapterIndex,
+                                    positionMs = resume.positionMs
+                                )
+                            )
+                            _lastBookSessions.value = bookSessionStore.getBookSessions()
+                        }
+                    } catch (e: Exception) {
+                        Log.w("StreamingMusicViewModel", "Failed to save book session", e)
+                    }
+                }
             }
+            }
+    }
+
+    /** Chapter ordering for audiobooks: ParentIndexNumber, IndexNumber, then title. */
+    private fun audiobookChapterComparator(): Comparator<StreamingSong> {
+        return AudiobookChapterOrder.comparator()
     }
 
     /**
@@ -1091,6 +1155,71 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
                 playQueue(tracks, startIndex = 0, shuffle = false)
             }
         }
+    }
+
+    /**
+     * Resume a saved audiobook ("继续播放"). Re-resolves the chapters from the
+     * server, computes the resume target from per-chapter UserData, then plays
+     * from the saved chapter. Falls back to chapter 0 / offset 0 when the
+     * server is unreachable (log message, not a hard error).
+     */
+    fun resumeBook(bookSession: BookSessionStore.BookSession) {
+        viewModelScope.launch {
+            try {
+                val album = repository.getAlbumById(bookSession.bookId)
+                val chapters = when (album) {
+                    is StreamingAlbum -> getAlbumSongs(album)
+                    else -> repository.getAlbumSongs(bookSession.bookId)
+                }.filter { it.isPlayable }
+                    .sortedWith(audiobookChapterComparator())
+
+                if (chapters.isEmpty()) {
+                    _error.value = "Book content unavailable. Try reconnecting to your service."
+                    return@launch
+                }
+
+                var resume = repository.getBookResumeTarget(bookSession.bookId, chapters)
+                // If the saved local chapter is ahead of what the server reports
+                // (e.g. server has no progress), prefer the local snapshot.
+                if (resume.positionMs <= 0L && resume.chapterIndex == 0) {
+                    val savedChapterIndex = chapters.indexOfFirst { chapter ->
+                        chapter.externalId == bookSession.chapterId ||
+                            decodeChapterId(chapter.id) == bookSession.chapterId
+                    }
+                    if (savedChapterIndex >= 0) {
+                        resume = StreamingMusicRepository.BookResumeTarget(
+                            savedChapterIndex,
+                            bookSession.positionMs
+                        )
+                    }
+                }
+
+                playQueue(
+                    queue = chapters,
+                    startIndex = resume.chapterIndex.coerceIn(0, chapters.lastIndex),
+                    shuffle = false,
+                    pinStartIndex = true
+                )
+            } catch (e: Exception) {
+                Log.w("StreamingMusicViewModel", "resumeBook failed for ${bookSession.bookId}", e)
+                _error.value = "Failed to resume book: ${e.message}"
+            }
+        }
+    }
+
+    /** Extract the raw provider id from a streaming song id (SERVICE::id). */
+    private fun decodeChapterId(songId: String): String {
+        return if (songId.contains("::")) {
+            songId.substringAfter("::")
+        } else {
+            songId
+        }
+    }
+
+    /** Remove a saved audiobook session (dismiss the continue card). */
+    fun dismissBookSession(bookId: String) {
+        bookSessionStore.removeBook(bookId)
+        _lastBookSessions.value = bookSessionStore.getBookSessions()
     }
 
     /**
@@ -2151,7 +2280,8 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
             duration = duration,
             uri = playbackUri,
             artworkUri = artworkUri?.takeIf { it.isNotBlank() }?.let(Uri::parse),
-            albumArtist = albumArtist
+            albumArtist = albumArtist,
+            isAudiobook = isBookType()
         )
     }
 }
