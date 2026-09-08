@@ -1031,7 +1031,7 @@ class JellyfinApiClient(context: Context) {
                 val hasSongPrimary = song.optJSONObject("ImageTags")?.has("Primary") == true
                 val imageItemId = if (hasSongPrimary) id else (songAlbumId ?: id)
 
-                val itemTypeVal = song.optString("Type", null)?.takeIf { it.isNotBlank() }
+                val itemTypeVal = song.optString("Type", "").takeIf { it.isNotBlank() }
                 val parentIndexVal = song.optInt("ParentIndexNumber", -1).takeIf { it >= 0 }
                 val userDataJson = song.optJSONObject("UserData")
                 val providerUserData = if (userDataJson != null) {
@@ -1193,7 +1193,7 @@ class JellyfinApiClient(context: Context) {
                 ?: album.optInt("ChildCount", 0),
             year = album.optInt("ProductionYear").takeIf { it > 0 },
             description = album.optString("Overview").takeIf { it.isNotBlank() },
-            itemType = album.optString("Type", null)?.takeIf { it.isNotBlank() }
+            itemType = album.optString("Type", "").takeIf { it.isNotBlank() }
         )
     }
 
