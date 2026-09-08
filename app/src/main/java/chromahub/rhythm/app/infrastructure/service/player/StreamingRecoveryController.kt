@@ -24,6 +24,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.coroutineContext
 
 /**
  * Automatic recovery for streaming playback interruptions ("断流重连").
@@ -146,7 +147,7 @@ class StreamingRecoveryController(
         val positionMs = callbacks.currentPositionMs()
         Log.d(TAG, "Streaming recovery: mediaId=$mediaId position=${positionMs}ms")
 
-        while (attempt < StreamingRecoveryPolicy.MAX_ATTEMPTS && isActive) {
+        while (attempt < StreamingRecoveryPolicy.MAX_ATTEMPTS && coroutineContext.isActive) {
             attempt++
             val backoff = StreamingRecoveryPolicy.backoffForAttempt(attempt)
             Log.d(TAG, "Streaming recovery attempt $attempt/${StreamingRecoveryPolicy.MAX_ATTEMPTS} (backoff ${backoff}ms)")
@@ -208,7 +209,7 @@ class StreamingRecoveryController(
                 .setMediaMetadata(metadata ?: androidx.media3.common.MediaMetadata.Builder().build())
                 .build()
 
-            callbacks.replaceCurrentItem(freshItem, retryPosition(frameSeekPosition(positionMs)))
+            callbacks.replaceCurrentItem(freshItem, frameSeekPosition(positionMs))
 
             callbacks.play()
             true
@@ -265,8 +266,7 @@ class StreamingRecoveryController(
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> "IO_NETWORK_CONNECTION_FAILED"
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "IO_NETWORK_CONNECTION_TIMEOUT"
             PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> "IO_FILE_NOT_FOUND"
-            PlaybackException.ERROR_CODE_IO_FILE_OFFSET -> "IO_FILE_OFFSET"
-            PlaybackException.ERROR_CODE_IO_HTTP_ERROR -> "IO_HTTP_ERROR"
+            PlaybackException.ERROR_CODE_IO_NO_PERMISSION -> "IO_NO_PERMISSION"
             PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "IO_BAD_HTTP_STATUS"
             PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE -> "IO_INVALID_HTTP_CONTENT_TYPE"
             PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE -> "IO_READ_POSITION_OUT_OF_RANGE"

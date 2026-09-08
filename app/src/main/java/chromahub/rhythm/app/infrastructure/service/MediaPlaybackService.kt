@@ -1439,10 +1439,14 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
             override fun replaceCurrentItem(item: MediaItem, seekPositionMs: Long) {
                 try {
                     val index = player.currentMediaItemIndex.takeIf { it != androidx.media3.common.C.INDEX_UNSET } ?: 0
-                    player.setMediaItem(item, index)
+                    // Replace the current media item in place: keep the existing
+                    // timeline but swap the payload URI/metadata for the item at
+                    // `index` so the queue order survives the recovery.
+                    player.removeMediaItem(index)
+                    player.addMediaItem(index, item)
                     player.prepare()
                     if (seekPositionMs > 0) {
-                        player.seekTo(index, seekPositionMs)
+                        player.seekTo(seekPositionMs)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Recovery replaceCurrentItem failed", e)

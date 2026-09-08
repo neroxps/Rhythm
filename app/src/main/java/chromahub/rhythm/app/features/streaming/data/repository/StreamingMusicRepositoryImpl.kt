@@ -27,6 +27,7 @@ import chromahub.rhythm.app.features.streaming.domain.model.StreamingArtist
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingPlaylist
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingServiceId
 import chromahub.rhythm.app.features.streaming.domain.model.StreamingSong
+import chromahub.rhythm.app.features.streaming.domain.model.StreamingUserData
 import chromahub.rhythm.app.features.streaming.domain.model.BookResumeSelector
 import chromahub.rhythm.app.features.streaming.domain.repository.StreamingMusicRepository
 import chromahub.rhythm.app.shared.data.model.AppSettings
@@ -652,13 +653,13 @@ class StreamingMusicRepositoryImpl(
     override suspend fun getBookResumeTarget(
         bookId: String,
         chapters: List<StreamingSong>
-    ): BookResumeTarget {
-        if (chapters.isEmpty()) return BookResumeTarget(0, 0L)
+    ): StreamingMusicRepository.BookResumeTarget {
+        if (chapters.isEmpty()) return StreamingMusicRepository.BookResumeTarget(0, 0L)
 
         // 1) Pure policy: last unfinished chapter with a saved position wins.
         val selection = BookResumeSelector.select(chapters)
         if (selection.chapterIndex > 0 || selection.positionMs > 0L) {
-            return BookResumeTarget(selection.chapterIndex, selection.positionMs)
+            return StreamingMusicRepository.BookResumeTarget(selection.chapterIndex, selection.positionMs)
         }
 
         val decodedId = decodeAlbumId(bookId)
@@ -671,12 +672,12 @@ class StreamingMusicRepositoryImpl(
                 ?.let { jellyfinClient.getPlaybackPosition(it).getOrNull() }
                 ?: 0L
             if (containerPositionMs > 0L) {
-                return BookResumeTarget(0, containerPositionMs)
+                return StreamingMusicRepository.BookResumeTarget(0, containerPositionMs)
             }
         }
 
         // 3) No progress anywhere: start from the beginning.
-        return BookResumeTarget(0, 0L)
+        return StreamingMusicRepository.BookResumeTarget(0, 0L)
     }
 
     /**

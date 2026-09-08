@@ -6003,17 +6003,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         
                         // Set shuffle mode BEFORE adding items if specified
                         if (enableShuffle != null) {
+                            val resolvedShuffle = effectiveShuffle ?: false
                             if (useExoPlayerShuffle) {
-                                controller.shuffleModeEnabled = effectiveShuffle
-                                _isShuffleEnabled.value = effectiveShuffle
+                                controller.shuffleModeEnabled = resolvedShuffle
+                                _isShuffleEnabled.value = resolvedShuffle
                             } else {
                                 controller.shuffleModeEnabled = false
-                                _isShuffleEnabled.value = effectiveShuffle
+                                _isShuffleEnabled.value = resolvedShuffle
                                 if (appSettings.shuffleModePersistence.value) {
-                                    appSettings.setSavedShuffleState(effectiveShuffle)
+                                    appSettings.setSavedShuffleState(resolvedShuffle)
                                 }
                             }
-                            Log.d(TAG, "Set shuffle mode to $effectiveShuffle before building queue (useExoPlayerShuffle=$useExoPlayerShuffle)")
+                            Log.d(TAG, "Set shuffle mode to $resolvedShuffle before building queue (useExoPlayerShuffle=$useExoPlayerShuffle)")
                         }
                         
                         // Prepare BEFORE setting queue state for better sync
