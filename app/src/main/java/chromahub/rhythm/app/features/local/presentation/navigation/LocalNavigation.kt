@@ -325,7 +325,8 @@ private fun StreamingSong.toLocalSong(): Song? {
         bitrate = bitrate,
         sampleRate = sampleRate,
         channels = channels,
-        codec = codec
+        codec = codec,
+        isAudiobook = isBookType() || isUserMarkedAudiobookAlbum()
     )
 }
 

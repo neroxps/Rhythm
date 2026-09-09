@@ -1064,11 +1064,10 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
             }
 
             val queueToPlayWithAutoResume = if (autoResume && isBookQueue && !effectiveShuffle) {
-                // Replace the start index with the server-saved resume chapter.
-                val resume = repository.getBookResumeTarget(
-                    bookId = orderedQueue.firstOrNull()?.albumId ?: orderedQueue.firstOrNull()?.id.orEmpty(),
-                    chapters = orderedQueue
-                )
+                // Replace the start index with the resolve bookmark: local book
+                // session first, then the server policy.
+                val bookId = orderedQueue.firstOrNull()?.albumId ?: orderedQueue.firstOrNull()?.id.orEmpty()
+                val resume = resolveBookResumeTarget(bookId, orderedQueue)
                 resume.chapterIndex.coerceIn(0, orderedQueue.lastIndex)
             } else {
                 safeStartIndex
@@ -1205,7 +1204,7 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
                     return@launch
                 }
 
-                var resume = repository.getBookResumeTarget(bookSession.bookId, chapters)
+                var resume = resolveBookResumeTarget(bookSession.bookId, chapters)
                 // If the saved local chapter is ahead of what the server reports
                 // (e.g. server has no progress), prefer the local snapshot.
                 if (resume.positionMs <= 0L && resume.chapterIndex == 0) {
@@ -1241,6 +1240,44 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
         } else {
             songId
         }
+    }
+
+    /**
+     * Resolve where a book should resume.
+     *
+     * Priority:
+     *  1. The local book session (chapter actually being listened to in book
+     *     mode). The server's saved position for that exact chapter is used as
+     *     the offset (fallback to the locally recorded position).
+     *  2. Server policy (BookResumeSelector: most recently played / highest
+     *     index unfinished chapter).
+     *
+     * The local session wins because Emby/Jellyfin may hold scattered
+     * semi-played chapters left over from random listening, which must not
+     * hijack a book's "continue" point.
+     */
+    private suspend fun resolveBookResumeTarget(
+        bookId: String,
+        chapters: List<StreamingSong>
+    ): StreamingMusicRepository.BookResumeTarget {
+        val localSession = bookSessionStore.getBookSessions().firstOrNull { it.bookId == bookId }
+        if (localSession != null && localSession.chapterId.isNotBlank() && chapters.isNotEmpty()) {
+            val index = chapters.indexOfFirst { chapter ->
+                chapter.externalId == localSession.chapterId ||
+                    decodeChapterId(chapter.id) == localSession.chapterId ||
+                    chapter.id == localSession.chapterId
+            }
+            if (index >= 0) {
+                val chapter = chapters[index]
+                val finished = chapter.userData?.isEffectivelyFinished() == true
+                val serverPosMs = chapter.userData?.positionMs ?: 0L
+                val posMs = if (serverPosMs > 0) serverPosMs else localSession.positionMs
+                if (!finished && posMs > 0) {
+                    return StreamingMusicRepository.BookResumeTarget(index, posMs)
+                }
+            }
+        }
+        return repository.getBookResumeTarget(bookId, chapters)
     }
 
     /** Remove a saved audiobook session (dismiss the continue card). */

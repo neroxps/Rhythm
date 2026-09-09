@@ -127,4 +127,18 @@ class BookResumeSelectorTest {
         assertEquals(1, target.chapterIndex)
         assertEquals(100_000L, target.positionMs)
     }
+
+    @Test
+    fun playedFlagWithPartialProgressIsNotFinished() {
+        // Emby/Jellyfin sets Played=true when an item has playback history even
+        // if the user is still in the middle (e.g. paused at 16%). The chapter
+        // must remain a resume candidate.
+        val chapters = listOf(
+            chapter("ch501", positionMs = 1_552_730_000 / 10_000L, playedPercentage = 16.2, played = true),
+            chapter("ch502", positionMs = 0L, played = true)
+        )
+        val target = BookResumeSelector.select(chapters)
+        assertEquals(0, target.chapterIndex)
+        assertEquals(1_552_730_000L / 10_000L, target.positionMs)
+    }
 }

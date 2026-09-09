@@ -25,11 +25,16 @@ data class StreamingUserData(
     val hasPlayed: Boolean = false
 ) {
     /**
-     * Whether the server considers this item finished (>95% played).
-     * Fully played chapters start over from the beginning on replay.
+     * Whether the server considers this item finished (>=95% played).
+     *
+     * NOTE: We deliberately ignore the `played` flag. Emby/Jellyfin sets
+     * `Played=true` as soon as an item has playback history (even paused or
+     * partially listened), so treating it as "finished" would skip chapters
+     * the user is still in the middle of (e.g. a book session paused at 16%).
+     * Only the percentage threshold marks a chapter as complete.
      */
     fun isEffectivelyFinished(): Boolean =
-        played || (playedPercentage >= 95.0)
+        playedPercentage >= 95.0
 }
 
 /** Item types the server can report that represent audiobook/audio-book content. */

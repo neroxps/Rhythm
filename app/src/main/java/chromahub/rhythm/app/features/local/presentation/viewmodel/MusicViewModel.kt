@@ -4456,6 +4456,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // Avoid spamming the server with the same position (e.g. paused at 0)
         if (lastReportedStreamingPositionMs == positionMs && lastReportedStreamingPaused == isPaused) return
 
+        // Keep the audiobook "Continue listening" card in sync with the chapter
+        // actually being played (progress advances by chapter, so the session
+        // must follow onMediaItemTransition too — this runs every 10s).
+        updateBookSessionForCurrentStream(song, positionMs)
+
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val repository = chromahub.rhythm.app.features.streaming.di.StreamingMusicModule.provideStreamingMusicRepository(getApplication())
@@ -4465,6 +4470,36 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to report streaming progress for song: $songId", e)
             }
+        }
+    }
+
+    /**
+     * Persist the currently playing audiobook chapter into
+     * [chromahub.rhythm.app.features.streaming.data.store.BookSessionStore] so
+     * "Continue listening" survives app restarts and follows the real chapter
+     * (not just the chapter the book was started from).
+     */
+    private fun updateBookSessionForCurrentStream(song: Song, positionMs: Long) {
+        try {
+            val albumId = song.albumId.takeIf { it.isNotBlank() } ?: return
+            if (!song.isAudiobook) return
+
+            val sessionStore = chromahub.rhythm.app.features.streaming.data.store.BookSessionStore(getApplication())
+            val index = _currentQueue.value.songs.indexOfFirst { it.id == song.id }
+            sessionStore.saveSession(
+                chromahub.rhythm.app.features.streaming.data.store.BookSessionStore.BookSession(
+                    bookId = albumId,
+                    title = song.album.ifBlank { song.title },
+                    author = song.albumArtist ?: song.artist,
+                    artworkUrl = song.artworkUri?.toString(),
+                    chapterId = song.id,
+                    chapterIndex = index.coerceAtLeast(0),
+                    positionMs = positionMs,
+                    isAudiobook = true
+                )
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update book session for ${song.id}", e)
         }
     }
     
