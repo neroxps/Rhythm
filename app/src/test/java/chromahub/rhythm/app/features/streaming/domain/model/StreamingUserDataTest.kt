@@ -36,8 +36,10 @@ class StreamingUserDataTest {
     }
 
     @Test
-    fun isEffectivelyFinished_trueWhenPlayedFlagSet() {
-        assertTrue(userData(positionMs = 10_000, playedPercentage = 50.0, played = true).isEffectivelyFinished())
+    fun isEffectivelyFinished_falseWhenPlayedFlagButPartialProgress() {
+        // Emby/Jellyfin sets Played=true as soon as an item has history, even
+        // while the user is mid-chapter; only >=95% means the chapter is done.
+        assertFalse(userData(positionMs = 10_000, playedPercentage = 50.0, played = true).isEffectivelyFinished())
     }
 
     @Test
