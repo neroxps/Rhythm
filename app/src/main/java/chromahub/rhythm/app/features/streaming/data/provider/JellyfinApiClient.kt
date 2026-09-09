@@ -16,8 +16,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import org.json.JSONArray
+import org.json.JSONObject
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import androidx.core.content.edit
@@ -139,7 +143,47 @@ class JellyfinApiClient(context: Context) {
         }
     }
 
-    suspend fun fetchLibrarySongs(limit: Int = 5_000): Result<List<ProviderSong>> {
+    suspend fun getArtists(limit: Int = 5_000): Result<List<ProviderArtist>> {
+        val cred = credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val pageSize = 200
+                var startIndex = 0
+                val artists = LinkedHashMap<String, ProviderArtist>()
+
+                while (artists.size < limit) {
+                    val params = buildArtistBrowseParams(
+                        query = null,
+                        limit = minOf(pageSize, limit - artists.size),
+                        startIndex = startIndex
+                    )
+                    val response = requestJson("/Artists", params).getOrThrow()
+                    val pageArtists = parseArtistItems(response)
+                    if (pageArtists.isEmpty()) break
+
+                    pageArtists.forEach { artist -> artists.putIfAbsent(artist.providerId, artist) }
+
+                    val totalRecordCount = response.optInt("TotalRecordCount", -1)
+                    startIndex += pageArtists.size
+
+                    if (totalRecordCount > 0 && startIndex >= totalRecordCount) break
+                    val limitParam = params["limit"]?.toIntOrNull().orZero()
+                    if (limitParam > 0 && pageArtists.size < limitParam) break
+                }
+
+                Result.success(artists.values.take(limit).toList())
+            } catch (e: Exception) {
+                Log.e(TAG, "Jellyfin getArtists fetch failed", e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun fetchLibrarySongs(
+        limit: Int = 5_000,
+        onProgress: ((current: Int, total: Int, songsCount: Int) -> Unit)? = null
+    ): Result<List<ProviderSong>> {
         val cred = credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
 
         return withContext(Dispatchers.IO) {
@@ -165,6 +209,12 @@ class JellyfinApiClient(context: Context) {
 
                     val totalRecordCount = response.optInt("TotalRecordCount", -1)
                     startIndex += rawItemsCount
+
+                    onProgress?.invoke(
+                        startIndex,
+                        if (totalRecordCount > 0) totalRecordCount else limit,
+                        songs.size
+                    )
 
                     if (totalRecordCount >= 0 && startIndex >= totalRecordCount) break
                     val limitParam = params["Limit"]?.toIntOrNull().orZero()
@@ -236,7 +286,7 @@ class JellyfinApiClient(context: Context) {
         }
     }
 
-    suspend fun getAlbumSongs(albumId: String, limit: Int = 500): Result<List<ProviderSong>> {
+    suspend fun getAlbumSongs(albumId: String, limit: Int = 2000): Result<List<ProviderSong>> {
         val cred = credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
         if (albumId.isBlank()) {
             return Result.failure(IllegalArgumentException("Album id is required"))
@@ -257,6 +307,9 @@ class JellyfinApiClient(context: Context) {
                     params["ParentId"] = albumId
                     params["SortBy"] = "ParentIndexNumber,IndexNumber,SortName"
                     params["SortOrder"] = "Ascending"
+                    // Books: include AudioBook/Book children (chapter items) as well
+                    // as plain Audio; the parser detects the item type per item.
+                    params["IncludeItemTypes"] = "Audio,AudioBook,Book"
 
                     val response = requestJson("/Users/${cred.userId}/Items", params).getOrThrow()
                     val pageSongs = parseAudioItems(response)
@@ -289,6 +342,32 @@ class JellyfinApiClient(context: Context) {
         return requestJson("/Users/${cred.userId}/Items/$albumId", params).map { response ->
             parseAlbumItem(response)
                 ?: throw IllegalStateException("Album not found for id=$albumId")
+        }
+    }
+
+    /**
+     * Fetch direct children of a book item (audiobook chapters). Books are
+     * usually a single item with chapters or an item with audio children;
+     * the generic album fetch already covers the chapter case because it
+     * requests ParentId + the book's IncludeItemTypes, but this explicit
+     * variant lets callers request the raw book container itself.
+     *
+     * Returns the container item (e.g. an "AudioBook" folder item) so callers
+     * can detect book mode even when the child items are plain Audio.
+     */
+    suspend fun getContainerById(itemId: String): Result<ProviderAlbum> {
+        val cred = credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
+        if (itemId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Item id is required"))
+        }
+
+        val params = mapOf(
+            "Fields" to "Overview,Genres,ArtistItems,Artists,AlbumArtist,ProductionYear,ImageTags,RunTimeTicks,ParentId,ItemCounts,UserData"
+        )
+
+        return requestJson("/Users/${cred.userId}/Items/$itemId", params).map { response ->
+            parseAlbumItem(response)
+                ?: throw IllegalStateException("Item not found for id=$itemId")
         }
     }
 
@@ -435,7 +514,7 @@ class JellyfinApiClient(context: Context) {
             try {
                 val bodyJson = JSONObject().apply {
                     put("Name", name.trim())
-                    put("Ids", songIds)
+                    put("Ids", JSONArray(songIds))
                     put("UserId", cred.userId)
                     put("MediaType", "Audio")
                     put("IsPublic", isPublic)
@@ -510,7 +589,7 @@ class JellyfinApiClient(context: Context) {
                         put("Name", name.trim())
                     }
                     if (songIds.isNotEmpty()) {
-                        put("Ids", songIds)
+                        put("Ids", JSONArray(songIds))
                     }
                     if (!description.isNullOrBlank()) {
                         put("Overview", description.trim())
@@ -549,15 +628,46 @@ class JellyfinApiClient(context: Context) {
             return Result.failure(IllegalArgumentException("At least one song id is required"))
         }
 
-        val params = mapOf(
-            "entryIds" to songIds.joinToString(",")
-        )
+        return withContext(Dispatchers.IO) {
+            try {
+                val targetIds = songIds.toSet()
+                val itemsResponse = requestJson(
+                    path = "/Playlists/$playlistId/Items",
+                    params = mapOf("Fields" to "Id", "Limit" to "1000")
+                ).getOrNull()
 
-        return request(
-            path = "/Playlists/$playlistId/Items",
-            params = params,
-            method = "DELETE"
-        ).map { true }
+                val entryIds = mutableListOf<String>()
+                val itemsArray = itemsResponse?.optJSONArray("Items")
+                if (itemsArray != null) {
+                    for (i in 0 until itemsArray.length()) {
+                        val item = itemsArray.optJSONObject(i) ?: continue
+                        val id = item.optString("Id", "")
+                        val playlistItemId = item.optString("PlaylistItemId", "")
+                        if (targetIds.contains(id) || targetIds.contains(playlistItemId)) {
+                            if (playlistItemId.isNotBlank()) {
+                                entryIds.add(playlistItemId)
+                            } else if (id.isNotBlank()) {
+                                entryIds.add(id)
+                            }
+                        }
+                    }
+                }
+
+                val idsToDelete = if (entryIds.isNotEmpty()) entryIds else songIds
+                val params = mapOf(
+                    "EntryIds" to idsToDelete.joinToString(",")
+                )
+
+                request(
+                    path = "/Playlists/$playlistId/Items",
+                    params = params,
+                    method = "DELETE"
+                ).map { true }
+            } catch (e: Exception) {
+                Log.e(TAG, "Jellyfin playlist removeSongs failed for playlistId=$playlistId", e)
+                Result.failure(e)
+            }
+        }
     }
 
     suspend fun markFavorite(itemId: String, isFavorite: Boolean): Result<Boolean> {
@@ -834,7 +944,7 @@ class JellyfinApiClient(context: Context) {
             put("IncludeItemTypes", "Audio")
             put("MediaTypes", "Audio")
             put("Recursive", "true")
-            put("Fields", "MediaSources,Genres,Path,Artists,AlbumArtist,AlbumId,Album,RunTimeTicks,ProductionYear,UserData,ParentId")
+            put("Fields", "MediaSources,Genres,Path,Artists,AlbumArtist,AlbumId,Album,RunTimeTicks,ProductionYear,UserData,ParentId,IndexNumber,ParentIndexNumber")
             put("enableUserData", "true")
             put("SortBy", "SortName")
             put("SortOrder", "Ascending")
@@ -844,6 +954,61 @@ class JellyfinApiClient(context: Context) {
             }
         }
     }
+
+    /**
+     * Browse params for audiobook libraries: includes book container types so
+     * the AudioBook/Book item type reaches the parser and book mode triggers.
+     */
+    private fun buildBookBrowseParams(
+        query: String?,
+        limit: Int,
+        startIndex: Int = 0
+    ): Map<String, String> {
+        return buildMap {
+            if (!query.isNullOrBlank()) {
+                put("SearchTerm", query)
+            }
+            put("IncludeItemTypes", "AudioBook,Book,MusicAlbum,Audio")
+            put("MediaTypes", "Audio")
+            put("Recursive", "true")
+            put("Fields", "MediaSources,Genres,Path,Artists,AlbumArtist,AlbumId,Album,RunTimeTicks,ProductionYear,UserData,ParentId,IndexNumber,ParentIndexNumber")
+            put("enableUserData", "true")
+            put("SortBy", "SortName")
+            put("SortOrder", "Ascending")
+            put("Limit", limit.coerceIn(1, 500).toString())
+            if (startIndex > 0) {
+                put("StartIndex", startIndex.toString())
+            }
+        }
+    }
+
+    /**
+     * Parse a Jellyfin/Emby ISO-8601 date string ("2026-02-01T12:30:45.1234567Z"
+     * or with offset) into epoch millis. Returns 0 on any parse failure.
+     */
+    private fun parseJellyfinDateMs(raw: String): Long {
+        if (raw.isBlank()) return 0L
+        return try {
+            val normalized = raw.trim()
+            val hasOffsetEnd = normalized.contains("Z") || normalized.contains("+") ||
+                normalized.regexOffsetPattern()
+            val instant = when {
+                normalized.endsWith("Z") ->
+                    Instant.parse(normalized)
+                hasOffsetEnd ->
+                    OffsetDateTime.parse(normalized, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant()
+                else ->
+                    Instant.parse(normalized + "Z") // naive server time assumed UTC
+            }
+            instant.toEpochMilli()
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    /** True when the date string carries a timezone offset (e.g. +08:00). */
+    private fun String.regexOffsetPattern(): Boolean =
+        Regex("[+-]\\d{2}:?\\d{2}$").containsMatchIn(this)
 
     private fun parseAudioItems(response: JSONObject): List<ProviderSong> {
         val items = response.optJSONArray("Items") ?: return emptyList()
@@ -893,6 +1058,24 @@ class JellyfinApiClient(context: Context) {
                     }
                 }
 
+                val songAlbumId = song.optString("AlbumId", "").takeIf { it.isNotBlank() }
+                    ?: song.optString("ParentId", "").takeIf { it.isNotBlank() }
+                val hasSongPrimary = song.optJSONObject("ImageTags")?.has("Primary") == true
+                val imageItemId = if (hasSongPrimary) id else (songAlbumId ?: id)
+
+                val itemTypeVal = song.optString("Type", "").takeIf { it.isNotBlank() }
+                val parentIndexVal = song.optInt("ParentIndexNumber", -1).takeIf { it >= 0 }
+                val userDataJson = song.optJSONObject("UserData")
+                val providerUserData = if (userDataJson != null) {
+                    ProviderUserData(
+                        playbackPositionTicks = userDataJson.optLong("PlaybackPositionTicks", 0L),
+                        playedPercentage = userDataJson.optDouble("PlayedPercentage", 0.0),
+                        played = userDataJson.optBoolean("Played", false),
+                        hasPlayed = userDataJson.optBoolean("Played", false),
+                        lastPlayedMs = parseJellyfinDateMs(userDataJson.optString("LastPlayedDate", ""))
+                    )
+                } else null
+
                 add(
                     ProviderSong(
                         providerId = id,
@@ -900,9 +1083,8 @@ class JellyfinApiClient(context: Context) {
                         artist = artist,
                         album = album,
                         durationMs = durationMs,
-                        artworkUrl = buildImageUrl(id),
-                        albumId = song.optString("AlbumId", "").takeIf { it.isNotBlank() }
-                            ?: song.optString("ParentId", "").takeIf { it.isNotBlank() },
+                        artworkUrl = buildImageUrl(imageItemId),
+                        albumId = songAlbumId,
                         albumArtist = song.optString("AlbumArtist", "").takeIf { it.isNotBlank() },
                         isFavorite = isFavorite,
                         trackNumber = trackNum,
@@ -911,7 +1093,10 @@ class JellyfinApiClient(context: Context) {
                         bitrate = bitrateVal,
                         sampleRate = sampleRateVal,
                         channels = channelsVal,
-                        codec = codecVal
+                        codec = codecVal,
+                        itemType = itemTypeVal,
+                        parentIndexNumber = parentIndexVal,
+                        userData = providerUserData
                     )
                 )
             }
@@ -965,7 +1150,7 @@ class JellyfinApiClient(context: Context) {
             put("IncludeItemTypes", "Playlist")
             put("Recursive", "true")
             put("Fields", "Overview,RunTimeTicks,ItemCounts")
-            put("Limit", limit.coerceIn(1, 100).toString())
+            put("Limit", limit.coerceIn(1, 1000).toString())
             if (startIndex > 0) {
                 put("StartIndex", startIndex.toString())
             }
@@ -986,7 +1171,7 @@ class JellyfinApiClient(context: Context) {
             put("IncludeItemTypes", includeItemTypes)
             put("Recursive", "true")
             put("Fields", fields)
-            put("Limit", limit.coerceIn(1, 100).toString())
+            put("Limit", limit.coerceIn(1, 1000).toString())
             if (startIndex > 0) {
                 put("StartIndex", startIndex.toString())
             }
@@ -999,10 +1184,13 @@ class JellyfinApiClient(context: Context) {
         startIndex: Int = 0
     ): Map<String, String> {
         return buildMap {
+            credentials?.userId?.takeIf { it.isNotBlank() }?.let {
+                put("userId", it)
+            }
             if (!query.isNullOrBlank()) {
                 put("searchTerm", query)
             }
-            put("limit", limit.coerceIn(1, 100).toString())
+            put("limit", limit.coerceIn(1, 1000).toString())
             if (startIndex > 0) {
                 put("startIndex", startIndex.toString())
             }
@@ -1037,7 +1225,8 @@ class JellyfinApiClient(context: Context) {
                 ?: album.optInt("SongCount").takeIf { it > 0 }
                 ?: album.optInt("ChildCount", 0),
             year = album.optInt("ProductionYear").takeIf { it > 0 },
-            description = album.optString("Overview").takeIf { it.isNotBlank() }
+            description = album.optString("Overview").takeIf { it.isNotBlank() },
+            itemType = album.optString("Type", "").takeIf { it.isNotBlank() }
         )
     }
 
@@ -1129,10 +1318,10 @@ class JellyfinApiClient(context: Context) {
     }
 
     private fun loadCredentials(): Credentials? {
-        val server = prefs.getString(KEY_SERVER_URL, null).orEmpty()
-        val user = prefs.getString(KEY_USERNAME, null).orEmpty()
-        val token = prefs.getString(KEY_ACCESS_TOKEN, null).orEmpty()
-        val userId = prefs.getString(KEY_USER_ID, null).orEmpty()
+        val server = prefs.getString(KEY_SERVER_URL, null).orEmpty().trim().trimEnd('/')
+        val user = prefs.getString(KEY_USERNAME, null).orEmpty().trim()
+        val token = prefs.getString(KEY_ACCESS_TOKEN, null).orEmpty().trim()
+        val userId = prefs.getString(KEY_USER_ID, null).orEmpty().trim()
 
         if (server.isBlank() || user.isBlank() || token.isBlank() || userId.isBlank()) {
             return null

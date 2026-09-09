@@ -47,6 +47,7 @@ import chromahub.rhythm.app.shared.data.model.Song
 import chromahub.rhythm.app.infrastructure.service.player.RhythmPlayerEngine
 import chromahub.rhythm.app.infrastructure.service.player.TransitionController
 import chromahub.rhythm.app.infrastructure.service.player.PreloadController
+import chromahub.rhythm.app.infrastructure.service.player.StreamingRecoveryController
 import chromahub.rhythm.app.infrastructure.widget.WidgetUpdater
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -61,6 +62,7 @@ import androidx.core.app.NotificationCompat
 import androidx.media3.common.AudioAttributes as ExoAudioAttributes
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import chromahub.rhythm.app.features.streaming.di.StreamingMusicModule
 import chromahub.rhythm.app.util.GsonUtils
 import chromahub.rhythm.app.shared.data.model.Playlist
 import kotlinx.coroutines.sync.Mutex
@@ -97,6 +99,7 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     // Rhythm player engine (dual-player crossfade) and transition controller
     private lateinit var rhythmPlayerEngine: RhythmPlayerEngine
     private lateinit var transitionController: TransitionController
+    private lateinit var streamingRecoveryController: StreamingRecoveryController
     
     // Sleep Timer functionality
     private var sleepTimerJob: Job? = null
@@ -125,6 +128,8 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
     private var equalizerVolumeRestoreTarget: Float? = null
     @Volatile
     private var pendingAudioEffectsSessionId: Int = 0
+    @Volatile
+    private var currentAudioEffectsSessionId: Int = 0
     
     // Player listener reference for proper cleanup
     private var playerListener: Player.Listener? = null
@@ -615,6 +620,12 @@ class MediaPlaybackService : MediaLibraryService(), Player.Listener {
             getString(chromahub.rhythm.app.R.string.service_loading_settings)
         )
         appSettings = AppSettings.getInstance(applicationContext)
+
+        // Initialize file logging (30MB capped, redacted) for playback diagnostics.
+        chromahub.rhythm.app.infrastructure.log.AppLogFileManager.init(applicationContext)
+
+        // Initialize the streaming recovery controller (auto-reconnect on 断流).
+        streamingRecoveryController = StreamingRecoveryController()
         
         // Initialize preloader
         preloadController = PreloadController(applicationContext, appSettings)
@@ -1035,8 +1046,9 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
             // Update widget with current song info
             updateWidgetFromMediaItem(newPlayer.currentMediaItem)
             
-            // Reinitialize audio effects with new session ID
-            if ((newPlayer as? ExoPlayer)?.audioSessionId != 0) {
+            // Reinitialize audio effects with new session ID if session changed
+            val newSessionId = (newPlayer as? ExoPlayer)?.audioSessionId ?: 0
+            if (newSessionId != 0 && (!audioEffectsInitialized || currentAudioEffectsSessionId != newSessionId)) {
                 initializeAudioEffects()
             }
         }
@@ -1056,59 +1068,46 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY && getPlayerAudioSessionId() != 0) {
-                    // Reinitialize audio effects with valid session ID
-                    val previouslyEnabled = getEqualizerEnabledSafe()
-                    Log.d(TAG, "Player ready with session ID ${getPlayerAudioSessionId()}, reinitializing effects (EQ was: $previouslyEnabled)")
-                    initializeAudioEffects()
-                    
-                    // Force reload audio effects settings to fix cold boot issue
-                    // This ensures bass boost and spatial audio are properly applied on first playback
-                    // Increased delay to ensure player is fully ready and processors are connected
-                    serviceScope.launch {
-                        delay(200) // Increased delay to ensure audio pipeline is fully initialized
-                        Log.d(TAG, "Force-reloading audio effects settings after player ready")
-                        loadSavedAudioEffects()
+                    val currentSessionId = getPlayerAudioSessionId()
+                    val needsInit = !audioEffectsInitialized || currentAudioEffectsSessionId != currentSessionId
+                    if (needsInit) {
+                        val previouslyEnabled = getEqualizerEnabledSafe()
+                        Log.d(TAG, "Player ready with new session ID $currentSessionId, initializing effects (EQ was: $previouslyEnabled)")
+                        initializeAudioEffects()
                         
-                        // Additional verification: Re-apply Rhythm processor settings after another small delay
-                        // This fixes the issue where processors don't receive settings on cold boot
-                        delay(100)
-                        Log.d(TAG, "Re-applying Rhythm processor settings for cold boot fix")
-                        
-                        // Re-apply bass boost if enabled
-                        if (appSettings.bassBoostEnabled.value && rhythmBassBoostProcessor != null) {
-                            rhythmBassBoostProcessor?.setEnabled(true)
-                            rhythmBassBoostProcessor?.setStrength(appSettings.bassBoostStrength.value.toShort())
-                            Log.d(TAG, "Cold boot: Re-applied bass boost - enabled=true, strength=${appSettings.bassBoostStrength.value}")
-                        }
-                        
-                        // Re-apply spatial audio if enabled
-                        if (appSettings.virtualizerEnabled.value && rhythmSpatializationProcessor != null) {
-                            rhythmSpatializationProcessor?.setEnabled(true)
-                            rhythmSpatializationProcessor?.setStrength(appSettings.virtualizerStrength.value.toShort())
-                            Log.d(TAG, "Cold boot: Re-applied spatial audio - enabled=true, strength=${appSettings.virtualizerStrength.value}")
-                        }
+                        // Reload effects settings and re-apply processors after audio pipeline is ready
+                        serviceScope.launch {
+                            delay(200)
+                            Log.d(TAG, "Force-reloading audio effects settings after player ready")
+                            loadSavedAudioEffects()
+                            
+                            delay(100)
+                            Log.d(TAG, "Re-applying Rhythm processor settings for cold boot fix")
+                            
+                            if (appSettings.bassBoostEnabled.value && rhythmBassBoostProcessor != null) {
+                                rhythmBassBoostProcessor?.setEnabled(true)
+                                rhythmBassBoostProcessor?.setStrength(appSettings.bassBoostStrength.value.toShort())
+                                Log.d(TAG, "Cold boot: Re-applied bass boost - enabled=true, strength=${appSettings.bassBoostStrength.value}")
+                            }
+                            
+                            if (appSettings.virtualizerEnabled.value && rhythmSpatializationProcessor != null) {
+                                rhythmSpatializationProcessor?.setEnabled(true)
+                                rhythmSpatializationProcessor?.setStrength(appSettings.virtualizerStrength.value.toShort())
+                                Log.d(TAG, "Cold boot: Re-applied spatial audio - enabled=true, strength=${appSettings.virtualizerStrength.value}")
+                            }
 
-                        // Re-apply mono audio if enabled
-                        if (appSettings.monoAudioEnabled.value && rhythmMonoAudioProcessor != null) {
-                            rhythmMonoAudioProcessor?.setEnabled(true)
-                            Log.d(TAG, "Cold boot: Re-applied mono audio - enabled=true")
+                            if (appSettings.monoAudioEnabled.value && rhythmMonoAudioProcessor != null) {
+                                rhythmMonoAudioProcessor?.setEnabled(true)
+                                Log.d(TAG, "Cold boot: Re-applied mono audio - enabled=true")
+                            }
                         }
-                    }
-                    
-                    // Verify state was preserved — ensure EQ hardware stays enabled to avoid DSP burst on disable
-                    val currentlyEnabled = getEqualizerEnabledSafe()
-                    if (previouslyEnabled != currentlyEnabled) {
+                        
+                        // Verify equalizer state was preserved after reinitialization
                         if (appSettings.equalizerEnabled.value) {
-                            Log.w(TAG, "Equalizer state changed after reinitialization! Was: $previouslyEnabled, Now: $currentlyEnabled, Expected: true")
-                            setEqualizerEnabled(true)
-                        } else {
-                            Log.d(TAG, "Re-enabling EQ hardware with flat bands after reinitialization")
-                            withEqualizerSafe("re-enable eq on reinit", Unit) { eq ->
-                                eq.enabled = true
-                                val numberOfBands = eq.numberOfBands.toInt()
-                                for (i in 0 until numberOfBands) {
-                                    eq.setBandLevel(i.toShort(), 0)
-                                }
+                            val currentlyEnabled = getEqualizerEnabledSafe()
+                            if (previouslyEnabled != currentlyEnabled) {
+                                Log.w(TAG, "Equalizer state changed after reinitialization! Was: $previouslyEnabled, Now: $currentlyEnabled, Expected: true")
+                                setEqualizerEnabled(true)
                             }
                         }
                     }
@@ -1131,6 +1130,17 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
             }
             
             override fun onPlayerError(error: PlaybackException) {
+                // Streaming tracks: try automatic recovery (up to 3 attempts),
+                // fall through to the default handler only for local files.
+                val item = player.currentMediaItem
+                if (::streamingRecoveryController.isInitialized) {
+                    val handled = streamingRecoveryController.handlePlayerError(
+                        error = error,
+                        mediaItem = item,
+                        playerCallbacks = recoveryPlayerCallbacks()
+                    )
+                    if (handled) return
+                }
                 handlePlaybackError(error)
             }
             
@@ -1392,6 +1402,9 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
             else -> "Playback error: ${error.message}"
         }
         Log.e(TAG, "Playback error: $message", error)
+
+        // Record local (non-streaming) failures to the log dir as well.
+        chromahub.rhythm.app.infrastructure.log.AppLogFileManager.e(TAG, message, error)
         
         // Prevent auto skip and looping loading on corrupted songs by pausing/stopping the player
         if (appSettings.trackErrorCheckerEnabled.value) {
@@ -1399,6 +1412,68 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
                 player.pause()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to pause player on error", e)
+            }
+        }
+    }
+
+    /** Callbacks that let StreamingRecoveryController drive the master player. */
+    private fun recoveryPlayerCallbacks(): StreamingRecoveryController.RecoveryPlayerCallbacks {
+        return object : StreamingRecoveryController.RecoveryPlayerCallbacks {
+            override fun context(): android.content.Context = this@MediaPlaybackService
+
+            override fun currentMediaItem(): MediaItem? = player.currentMediaItem
+
+            override fun currentPositionMs(): Long = player.currentPosition
+
+            override fun stopPlayer() {
+                try {
+                    if (rhythmPlayerEngine.isTransitionRunning()) {
+                        transitionController.cancelPendingTransition()
+                    }
+                    player.stop()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Recovery stopPlayer failed", e)
+                }
+            }
+
+            override fun replaceCurrentItem(item: MediaItem, seekPositionMs: Long) {
+                try {
+                    val index = player.currentMediaItemIndex.takeIf { it != androidx.media3.common.C.INDEX_UNSET } ?: 0
+                    // Replace the current media item in place: keep the existing
+                    // timeline but swap the payload URI/metadata for the item at
+                    // `index` so the queue order survives the recovery.
+                    player.removeMediaItem(index)
+                    player.addMediaItem(index, item)
+                    player.prepare()
+                    if (seekPositionMs > 0) {
+                        player.seekTo(seekPositionMs)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Recovery replaceCurrentItem failed", e)
+                    throw e
+                }
+            }
+
+            override fun play() {
+                try {
+                    player.prepare()
+                    player.play()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Recovery play failed", e)
+                    throw e
+                }
+            }
+
+            override fun currentTrackId(): String? = player.currentMediaItem?.mediaId
+
+            override fun resolveStreamingUrl(songId: String): String? {
+                return try {
+                    val repo = StreamingMusicModule.provideStreamingMusicRepository(this@MediaPlaybackService)
+                    kotlinx.coroutines.runBlocking { repo.getStreamingUrl(songId) }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Recovery resolveStreamingUrl failed", e)
+                    null
+                }
             }
         }
     }
@@ -2292,6 +2367,11 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
         instanceForWidgetAndLyricsOnly = null
         Log.d(TAG, "Service being destroyed")
 
+        // Reset the recovery controller so a new session starts clean.
+        if (::streamingRecoveryController.isInitialized) {
+            streamingRecoveryController.reset()
+        }
+
         // Persist final playback position and index on destroy
         if (::player.isInitialized && appSettings.queuePersistenceEnabled.value) {
             val currentIndex = player.currentMediaItemIndex
@@ -2392,9 +2472,10 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
             }
             availableCommands.add(SessionCommand("UPDATE_ACTIVE_LYRIC", Bundle.EMPTY))
             availableCommands.add(SessionCommand("UPDATE_LYRICS_DATA", Bundle.EMPTY))
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(availableCommands.build())
-                .build()
+            return MediaSession.ConnectionResult.accept(
+                availableCommands.build(),
+                MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+            )
         }
 
         @OptIn(UnstableApi::class)
@@ -3104,44 +3185,49 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
     private suspend fun initializeAudioEffectsInternal(audioSessionId: Int) {
         try {
             isInitializingAudioEffects = true
-            Log.d(TAG, "Initializing audio effects with session ID: $audioSessionId (previously initialized: $audioEffectsInitialized)")
+            val shouldEnableEqualizer = appSettings.equalizerEnabled.value
+            Log.d(TAG, "Initializing audio effects with session ID: $audioSessionId (current: $currentAudioEffectsSessionId, EQ enabled: $shouldEnableEqualizer)")
 
-            // CRITICAL: Release ALL existing effects BEFORE creating new ones to prevent AudioFlinger error -38
-            try {
-                equalizer?.release()
-                equalizer = null
-
-                // Reset Rhythm processors
-                rhythmBassBoostProcessor?.reset()
-                rhythmSpatializationProcessor?.reset()
-
-                Log.d(TAG, "Released existing audio effects before reinitialization")
-
-                // Small non-blocking delay to allow Android AudioFlinger to fully release resources.
-                delay(50)
-            } catch (e: Exception) {
-                Log.w(TAG, "Error releasing existing effects: ${e.message}")
-            }
-
-            // Initialize equalizer directly (no dummy checks - they waste effect slots)
-            try {
-                equalizer = android.media.audiofx.Equalizer(0, audioSessionId).apply {
-                    enabled = true
+            if (!shouldEnableEqualizer) {
+                if (equalizer != null) {
+                    try {
+                        equalizer?.release()
+                        Log.d(TAG, "Released unused equalizer effect")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error releasing unused equalizer: ${e.message}")
+                    }
+                    equalizer = null
+                    currentAudioEffectsSessionId = 0
                 }
-                Log.d(TAG, "Equalizer initialized with ${equalizer?.numberOfBands} bands for session $audioSessionId")
-            } catch (e: Exception) {
-                Log.w(TAG, "Equalizer is not available on this device: ${e.message}")
-                equalizer = null
+            } else {
+                if (equalizer == null || currentAudioEffectsSessionId != audioSessionId) {
+                    try {
+                        equalizer?.release()
+                        equalizer = null
+                        currentAudioEffectsSessionId = 0
+                        delay(50)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error releasing existing equalizer: ${e.message}")
+                    }
+
+                    try {
+                        equalizer = android.media.audiofx.Equalizer(0, audioSessionId).apply {
+                            enabled = true
+                        }
+                        currentAudioEffectsSessionId = audioSessionId
+                        Log.d(TAG, "Equalizer initialized with ${equalizer?.numberOfBands} bands for session $audioSessionId")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Equalizer is not available on this device: ${e.message}")
+                        equalizer = null
+                        currentAudioEffectsSessionId = 0
+                    }
+                } else {
+                    Log.d(TAG, "Equalizer already active for session $audioSessionId, skipping recreation")
+                }
             }
 
-            // Initialize Rhythm audio processors (replaces Android BassBoost and Spatializer)
-            // Processors are created unconditionally now, just load their settings here
-            Log.d(TAG, "Loading Rhythm processor settings")
-
-            // Load saved settings and apply them
             loadSavedAudioEffects()
 
-            // Mark as successfully initialized
             audioEffectsInitialized = true
             Log.d(TAG, "Audio effects initialization completed successfully")
 
@@ -3155,7 +3241,6 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
     
     private fun loadSavedAudioEffects() {
         try {
-            // Load saved settings and apply them to equalizer if available
             if (equalizer != null) {
                 val shouldBeEnabled = appSettings.equalizerEnabled.value
                 Log.d(TAG, "Loading saved effects - EQ should be enabled: $shouldBeEnabled")
@@ -3232,7 +3317,7 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
     }
     
     fun setEqualizerEnabled(enabled: Boolean) {
-        if (equalizer == null) {
+        if (enabled && equalizer == null) {
             Log.w(TAG, "Attempting to enable equalizer but equalizer is null. Will reinitialize.")
             // Try to initialize if we have a valid session ID
             if (getPlayerAudioSessionId() != 0) {
@@ -3532,6 +3617,8 @@ notificationManager.createNotificationChannel(sleepTimerChannel)
         try {
             equalizer?.release()
             equalizer = null
+            currentAudioEffectsSessionId = 0
+            audioEffectsInitialized = false
             
             // Reset Rhythm processors
             rhythmBassBoostProcessor?.reset()

@@ -47,13 +47,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import chromahub.rhythm.app.ui.theme.RhythmTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp

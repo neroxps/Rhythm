@@ -88,7 +88,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -287,7 +286,6 @@ fun TunerSettingRow(item: SettingItem) {
                 checked = item.toggleState,
                 onCheckedChange = {
                     if (!item.enabled) return@TunerAnimatedSwitch
-                    HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.LIGHT)
                     item.onToggleChange?.invoke(it)
                 },
                 enabled = item.enabled
@@ -297,7 +295,6 @@ fun TunerSettingRow(item: SettingItem) {
                 checked = item.toggleState,
                 onCheckedChange = {
                     if (!item.enabled) return@TunerAnimatedSwitch
-                    HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.LIGHT)
                     item.onToggleChange?.invoke(it)
                 },
                 enabled = item.enabled
@@ -326,9 +323,14 @@ fun TunerAnimatedSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
+    val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
     Switch(
         checked = checked,
-        onCheckedChange = onCheckedChange,
+        onCheckedChange = {
+            HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.LIGHT)
+            onCheckedChange(it)
+        },
         enabled = enabled,
         modifier = modifier,
         thumbContent = {
@@ -360,12 +362,17 @@ fun TunerSettingCard(
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .then(
                 if (onClick != null && checked == null) {
-                    Modifier.clickable(onClick = onClick)
+                    Modifier.clickable(onClick = {
+                        HapticUtils.performHapticFeedback(context, hapticFeedback, HapticType.MEDIUM)
+                        onClick()
+                    })
                 } else {
                     Modifier
                 }
@@ -413,7 +420,6 @@ fun TunerSettingCard(
                     onCheckedChange = onCheckedChange
                 )
             } else if (onClick != null) {
-                val context = LocalContext.current
                 Icon(
                     imageVector = MaterialSymbolIcon("arrow_forward_ios", filled = true),
                     contentDescription = context.getString(R.string.cd_navigate),
@@ -460,9 +466,6 @@ fun toMaterial3SettingsItem(
                         checked = item.toggleState,
                         onCheckedChange = {
                             if (!item.enabled) return@TunerAnimatedSwitch
-                            hapticFeedback?.let { haptic ->
-                                HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
-                            }
                             item.onToggleChange?.invoke(it)
                         },
                         enabled = item.enabled
@@ -475,9 +478,6 @@ fun toMaterial3SettingsItem(
                     checked = item.toggleState,
                     onCheckedChange = {
                         if (!item.enabled) return@TunerAnimatedSwitch
-                        hapticFeedback?.let { haptic ->
-                            HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
-                        }
                         item.onToggleChange?.invoke(it)
                     },
                     enabled = item.enabled

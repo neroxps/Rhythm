@@ -7,6 +7,11 @@
 
 package chromahub.rhythm.app.shared.presentation.screens.settings
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.groupedBottomSheetItemShape
+
 
 
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
@@ -44,7 +49,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -89,7 +93,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -175,23 +178,8 @@ fun FestivalSelectionBottomSheet(
     val haptic = LocalHapticFeedback.current
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
-    // Animation states
-    var showContent by remember { mutableStateOf(false) }
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (showContent) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "contentAlpha"
-    )
-
-    LaunchedEffect(Unit) {
-        delay(100)
-        showContent = true
-    }
-
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.COMPACT_DIALOG,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -203,149 +191,133 @@ fun FestivalSelectionBottomSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
-        val contentHorizontalPadding = 24.dp
+        StandardBottomSheetHeader(
+            title = context.getString(R.string.settings_select_festival),
+            subtitle = context.getString(R.string.settings_choose_festive_theme),
+            visible = true
+        )
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 0.dp, vertical = 0.dp)
-                .padding(bottom = 24.dp)
-                .graphicsLayer(alpha = contentAlpha)
-        ) {
-            StandardBottomSheetHeader(
-                title = context.getString(R.string.settings_select_festival),
-                subtitle = context.getString(R.string.settings_choose_festive_theme),
-                visible = showContent,
-                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
-            )
+        val scrollState = rememberScrollState()
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Festival Options
-            val festivals = listOf(
-                Triple("CHRISTMAS", context.getString(R.string.settings_festival_christmas), MaterialSymbolIcon("ac_unit")),
-                Triple("NEW_YEAR", context.getString(R.string.settings_festival_new_year), MaterialSymbolIcon("celebration"))
-            )
-
+        AdaptiveSheetScrollContainer(
+            scrollState = scrollState,
+            modifier = Modifier.fillMaxWidth()
+        ) { endPadding ->
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = contentHorizontalPadding)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(start = 24.dp, end = 24.dp + endPadding, bottom = 24.dp)
             ) {
-                festivals.forEach { (value, name, icon) ->
-                    val isSelected = currentFestival == value
-                    val isAvailable = true
+                    // Festival Options
+                    val festivals = listOf(
+                        Triple("CHRISTMAS", context.getString(R.string.settings_festival_christmas), MaterialSymbolIcon("ac_unit")),
+                        Triple("NEW_YEAR", context.getString(R.string.settings_festival_new_year), MaterialSymbolIcon("celebration"))
+                    )
 
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected)
-                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
-                            else
-                                MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        shape = RoundedCornerShape(24.dp),
-                        onClick = {
-                            if (isAvailable) {
-                                HapticUtils.performHapticFeedback(context, haptic, HapticType.HEAVY)
-                                onFestivalSelected(value)
-                            }
-                        }
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                        festivals.forEachIndexed { index, (value, name, icon) ->
+                            val isSelected = currentFestival == value
+                            val isAvailable = true
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected)
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+                                    else
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
+                                ),
+                                shape = groupedBottomSheetItemShape(index, festivals.size),
+                                onClick = {
+                                    if (isAvailable) {
+                                        HapticUtils.performHapticFeedback(context, haptic, HapticType.HEAVY)
+                                        onFestivalSelected(value)
+                                    }
+                                }
                             ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = when {
-                                        !isAvailable -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                        isSelected -> MaterialTheme.colorScheme.primary
-                                        else -> MaterialTheme.colorScheme.surfaceVariant
-                                    },
-                                    modifier = Modifier.size(44.dp)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(20.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier.fillMaxSize()
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
                                     ) {
                                         Icon(
                                             imageVector = icon,
                                             contentDescription = null,
                                             tint = when {
                                                 !isAvailable -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-                                                isSelected -> MaterialTheme.colorScheme.onPrimary
+                                                isSelected -> MaterialTheme.colorScheme.primaryContainer
                                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
                                             },
-                                            modifier = Modifier.size(22.dp)
+                                            modifier = Modifier.size(if (isSelected) 30.dp else 26.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = name,
+                                                style = MaterialTheme.typography.bodyLarge.copy(
+                                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                                                ),
+                                                color = when {
+                                                    !isAvailable -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                                    isSelected -> MaterialTheme.colorScheme.primaryContainer
+                                                    else -> MaterialTheme.colorScheme.onSurface
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = RhythmIcons.CheckCircle,
+                                            contentDescription = context.getString(R.string.ui_selected),
+                                            tint = MaterialTheme.colorScheme.primaryContainer,
+                                            modifier = Modifier.size(24.dp)
                                         )
                                     }
                                 }
-                                Column {
-                                    Text(
-                                        text = name,
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
-                                        ),
-                                        color = when {
-                                            !isAvailable -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                            isSelected -> MaterialTheme.colorScheme.primaryContainer
-                                            else -> MaterialTheme.colorScheme.onSurface
-                                        }
-                                    )
-                                }
                             }
+                        }
+                    }
 
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = RhythmIcons.CheckCircle,
-                                    contentDescription = context.getString(R.string.ui_selected),
-                                    tint = MaterialTheme.colorScheme.primaryContainer,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Info card
+                    Card(
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = MaterialSymbolIcon("lightbulb", filled = true),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = context.getString(R.string.settings_more_festivals),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Info card
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = contentHorizontalPadding)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Icon(
-                        imageVector = MaterialSymbolIcon("lightbulb", filled = true),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = context.getString(R.string.settings_more_festivals),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
         }
     }
-}

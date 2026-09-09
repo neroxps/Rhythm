@@ -8,7 +8,141 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- 
+- Emby/Jellyfin audiobook (book) mode: books play sequentially without shuffle, chapters ordered by server ParentIndexNumber/IndexNumber, and playback resumes from the saved server per-item UserData position.
+- "Continue listening" card on the streaming home for the last audiobook session, reopening the book at the saved chapter and offset.
+- Automatic streaming recovery: when a network interruption breaks playback (Source error), the player invalidates the stale URL, resolves a fresh one, seeks back to the interruption point and resumes — up to 3 attempts (1s/2s/4s backoff).
+- Detailed playback failure dialog: error code name, HTTP/source cause chain, attempt count, Retry action, and one-tap log export.
+- App-level diagnostics log directory (filesDir/logs) with 5 MB rolling files, a 30 MB total cap, and credential redaction (api_key, Tokens, passwords, bearer tokens, Subsonic auth params) before anything is written.
+- GitHub Actions JVM unit-test job (testGithubDebugUnitTest) covering book-type detection, chapter ordering, resume-target selection, recovery policy, and log-budget/redaction rules.
+
+### Changed
+- Version bump to 5.5.480.1260 baseline (aligned with upstream cromaguy/Rhythm main).
+
+## [5.5.480.1260] - 2026-09-06
+
+### Added
+- Rhythm Go offline music downloads: download tracks from Subsonic and Jellyfin servers with real-time progress tracking and offline management
+- Local network server discovery to auto-scan and connect to nearby Jellyfin and Subsonic servers
+- Adaptive Two-Pane layouts and dialogs designed specifically for tablets, foldables, and large screens
+- Enhanced tablet sheet navigation with pinned headers, interactive scrollbars, and desktop mouse-wheel support
+- Comprehensive gesture customization with independent controls across player, mini-player, queue, library tabs, and lyrics screens
+- Mini-player swipe gestures to configure horizontal track skipping and vertical dismiss actions independently
+- Album artwork tap actions including single-tap (toggle lyrics), double-tap (play/pause), and tap-to-seek controls
+- Customizable and reorderable bottom player action buttons for Normal and Merge modes
+- Revamped playback queue with played and up-next sections, swipe-to-dismiss tracks, sticky headers, and smooth drag-and-drop reordering
+- Context-aware playback queue preserving album and artist context on track taps (#546)
+- Option to keep shuffle active when manually selecting a song from the library
+- TTML and Enhanced LRC (.elrc) synchronized lyrics export, editing, and local file discovery
+- Streaming service selection step in the initial onboarding tour
+
+### Changed
+- Streaming resilience with automatic fallback to downloaded offline music when servers disconnect, plus faster sync and cover art caching
+- Touch-aware lyrics auto-scroll that pauses automatically while reading or interacting with lyrics
+- Updated translations from Weblate
+
+### Fixed
+- Audio service stability fixes preventing background playback termination and native audio engine crashes
+- Preserved correct playback queue order when using "Play Next" and "Add to Queue" while shuffle is active
+- Multi-artist delimiter handling preventing multi-character delimiters (such as "ft.") from splitting names into individual letters
+- Missing artist indexing, empty album navigation, and media scanner folder whitelist filtering
+- Normalized track added and modified timestamps to milliseconds with automatic database migration
+- Restored missing Favorite and Lyrics action buttons in Merge Mode bottom player controls
+- Bottom sheet visual jitter and layout jumps during transitions
+
+### Performance
+- Instant backward seeking with a 10-second back-buffer cache to eliminate re-buffering
+- Dynamic high-precision scrubbing with sample-accurate playback alignment on release
+
+## [5.5.479.1258 Beta] - 2026-09-05
+
+### Added
+- Streaming service selection step in the onboarding tour
+- Option to keep shuffle active when manually selecting a track
+- Context-aware playback queue preserving album and artist context on track taps (#546)
+- Updated translations from Weblate
+
+### Changed
+- Refined playback queue UX, artist navigation sheets, and detail screen haptics (#571, #543)
+
+### Fixed
+- Restored Favorite and Lyrics action buttons in Merge Mode bottom player controls
+- Improved streaming provider reliability across Subsonic and Jellyfin with real-time download tracking, faster sync, and offline fallback
+- Resolved local library indexing, artist delimiter splitting, and media scanner folder whitelist filtering
+- Fixed audio service stability and background playback termination
+
+## [5.5.473.1246 Beta] - 2026-09-01
+
+### Added
+- Customizable bottom player action buttons with reordering and quick toggles
+- Adaptive bottom sheet architecture with responsive layouts and fluid scrollbar interactions
+- TTML and Enhanced LRC (.elrc) export, editing, and file discovery support
+
+### Fixed
+- Preserve playback queue order for Play Next and Add to Queue under Shuffle Engine
+- Normalize date added and modified timestamps to milliseconds with Room DB migration
+- Suppress lyrics auto-scroll during active user gestures and touch interactions
+- Improved TTML line-level timing and Unicode script detection for romanization
+- Updated translations from Weblate
+
+## [5.4.468.1233] - 2026-08-28
+
+### Added
+- Overhauled onboarding tour with interactive setup for shape presets and artist delimiters
+- Enhanced multi-artist splitting with custom delimiter creation, presets, and protected artist names
+- Integrated multi-artist splitting into playback stats, play counts, and top artists
+- Minimum song duration filter in media scan settings to ignore short audio clips
+
+### Changed
+- Clear and user-friendly error messages when Jellyfin connection fails #561
+- Updated Material 3 design components and improved navigation stability
+
+## [5.4.466.1229] - 2026-08-27
+
+### Added
+- Docked navigation bar mode option alongside floating navigation bar
+- Ambient infinite background zoom animation toggle in Player Customization
+- On-demand Coil AudioArtworkFetcher and AudioArtworkKeyer for efficient cover art decoding
+- Lossless embedded artwork extraction and folder cover reconciliation pipeline
+- Direct audio file artwork embedding dialog for fetched covers
+
+### Changed
+- Refined synchronized lyrics background gradient in accent color mode
+- Updated translations
+
+### Fixed
+- Fix OutOfMemoryError during Room playlist transactions and Canvas ExoPlayer playback
+- Fix controller player commands permission mask in MediaPlaybackService restricting external controls
+- Fix storage write permission handling when embedding artwork from the player
+- Resolve compiler deprecations and Jetpack Compose lint warnings
+
+### Performance
+- Optimize cold startup performance for large libraries by eliminating blocking disk I/O
+- Optimize media scanning and artwork extraction with native TagLib routines and folder cover caching
+- Stabilize Discover carousel state across background metadata emissions
+
+## [5.4.465.1226] - 2026-08-27
+
+### Added
+- Docked navigation bar mode option alongside floating navigation bar
+- Ambient infinite background zoom animation toggle in Player Customization
+- On-demand Coil AudioArtworkFetcher and AudioArtworkKeyer for efficient cover art decoding
+- Lossless embedded artwork extraction and folder cover reconciliation pipeline
+- Direct audio file artwork embedding dialog for fetched covers
+
+### Changed
+- Refined synchronized lyrics background gradient in accent color mode
+- Updated translations
+
+### Fixed
+- Fix OutOfMemoryError during Room playlist transactions and Canvas ExoPlayer playback
+- Fix controller player commands permission mask in MediaPlaybackService restricting external controls
+- Fix storage write permission handling when embedding artwork from the player
+- Resolve compiler deprecations and Jetpack Compose lint warnings
+
+### Performance
+- Optimize cold startup performance for large libraries by eliminating blocking disk I/O
+- Optimize media scanning and artwork extraction with native TagLib routines and folder cover caching
+- Stabilize Discover carousel state across background metadata emissions
 
 ## [5.4.462.1216] - 2026-08-23
 

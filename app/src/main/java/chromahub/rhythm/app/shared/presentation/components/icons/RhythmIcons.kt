@@ -103,6 +103,8 @@ object RhythmIcons {
         val MusicNote = MaterialSymbolIcon("music_note")
         val Audiotrack = MaterialSymbolIcon("audiotrack")
         val MusicOff = MaterialSymbolIcon("music_off")
+        val Audiobook = MaterialSymbolIcon("menu_book", filled = true)
+        val AudiobookOutlined = MaterialSymbolIcon("menu_book")
     }
 
     // ═══════════════════════════════════════════════════
@@ -272,6 +274,8 @@ object RhythmIcons {
     val PlaylistFilled = Music.Playlist
     val MusicNote = Music.MusicNote
     val MusicOff = Music.MusicOff
+    val Audiobook = Music.Audiobook
+    val AudiobookOutlined = Music.AudiobookOutlined
 
     // Mood & moments
     val Energy = Player.Equalizer

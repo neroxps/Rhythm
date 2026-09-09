@@ -36,10 +36,20 @@ data class StreamingSong(
     val bitrate: Int? = null,
     val sampleRate: Int? = null,
     val channels: Int? = null,
-    val codec: String? = null
+    val codec: String? = null,
+    val itemType: String? = null,
+    val parentIndexNumber: Int? = null,
+    val userData: StreamingUserData? = null
 ) : PlayableItem {
     
     override fun getPlaybackUri(): String = streamingUrl ?: previewUrl ?: ""
+    
+    /**
+     * True when this track is an audiobook / audio-book chapter from the server.
+     * Book playback is sequential (no shuffle) and each chapter resumes from
+     * the server-saved position.
+     */
+    fun isBookType(): Boolean = StreamingItemType.isBookType(itemType)
     
     /**
      * Check if full playback is available (vs preview only).

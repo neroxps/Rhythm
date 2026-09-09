@@ -7,6 +7,11 @@
 
 package chromahub.rhythm.app.shared.presentation.components.dialogs
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+import androidx.compose.foundation.lazy.rememberLazyListState
+
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.Icon
 
@@ -172,7 +177,8 @@ fun AutoEQProfileSelector(
         }
     }
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.AUTO_DIALOG,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         onDismissRequest = onDismiss,
         sheetState = bottomSheetState,
@@ -428,36 +434,45 @@ fun AutoEQProfileSelector(
                 AnimatedVisibility(
                     visible = !isLoading && showContent,
                     enter = fadeIn(),
-                    exit = fadeOut()
+                    exit = fadeOut(),
+                    modifier = Modifier.weight(1f, fill = false)
                 ) {
-                    LazyColumn(
-                        contentPadding = PaddingValues(horizontal = 5.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.graphicsLayer {
-                            alpha = contentAlpha
-                        }
-                    ) {
-                        items(filteredProfiles, key = { it.name }) { profile ->
-                            val isCurrentlyActive = profile.name == currentAutoEQProfile
-                            ProfileCard(
-                                profile = profile,
-                                isActive = isCurrentlyActive,
-                                onClick = {
-                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
-                                    onProfileSelected(profile)
-                                },
-                                onDisable = if (isCurrentlyActive) {
-                                    {
+                    val autoEqListState = rememberLazyListState()
+
+                    AdaptiveSheetScrollContainer(
+                        lazyListState = autoEqListState,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { endPadding ->
+                        LazyColumn(
+                            state = autoEqListState,
+                            contentPadding = PaddingValues(start = 5.dp, end = 5.dp + endPadding, top = 8.dp, bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.graphicsLayer {
+                                alpha = contentAlpha
+                            }
+                        ) {
+                            items(filteredProfiles, key = { it.name }) { profile ->
+                                val isCurrentlyActive = profile.name == currentAutoEQProfile
+                                ProfileCard(
+                                    profile = profile,
+                                    isActive = isCurrentlyActive,
+                                    onClick = {
                                         HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
-                                        onProfileSelected(AutoEQProfile(
-                                            name = "",
-                                            brand = "",
-                                            type = "",
-                                            bands = listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
-                                        ))
-                                    }
-                                } else null
-                            )
+                                        onProfileSelected(profile)
+                                    },
+                                    onDisable = if (isCurrentlyActive) {
+                                        {
+                                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                            onProfileSelected(AutoEQProfile(
+                                                name = "",
+                                                brand = "",
+                                                type = "",
+                                                bands = listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
+                                            ))
+                                        }
+                                    } else null
+                                )
+                            }
                         }
                     }
                 }

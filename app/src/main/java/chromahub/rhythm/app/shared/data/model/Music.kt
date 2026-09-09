@@ -35,7 +35,8 @@ data class Song(
     val channels: Int? = null, // Number of audio channels (1=mono, 2=stereo, 6=5.1, etc.)
     val codec: String? = null, // Audio codec (AAC, MP3, FLAC, etc.)
     val discNumber: Int = 1, // Multi-disc support
-    val path: String? = null
+    val path: String? = null,
+    val isAudiobook: Boolean = false // True for audiobook chapters (sequential playback, server-resume)
 ) : Parcelable {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -63,6 +64,7 @@ data class Song(
         if (!Objects.equals(codec, other.codec)) return false
         if (discNumber != other.discNumber) return false
         if (path != other.path) return false
+        if (isAudiobook != other.isAudiobook) return false
 
         return true
     }
@@ -88,7 +90,8 @@ data class Song(
             channels,
             codec,
             discNumber,
-            path
+            path,
+            isAudiobook
         )
     }
 }
@@ -117,8 +120,12 @@ private fun Song.albumGroupMatchKey(): String =
         ?: artist.trim().takeIf { it.isNotBlank() }
         ?: "Unknown Artist").normalizedAlbumMatchKey()
 
-private fun Album.hasTitle(title: String): Boolean =
-    this.title.trim().equals(title.trim(), ignoreCase = true)
+private fun Album.hasTitle(title: String): Boolean {
+    val cleanThis = this.title.trim()
+    val cleanTarget = title.trim()
+    return cleanThis.equals(cleanTarget, ignoreCase = true) ||
+        cleanThis.replace('/', '_').equals(cleanTarget.replace('/', '_'), ignoreCase = true)
+}
 
 private fun Album.isCompilation(): Boolean =
     artist.trim().equals("Various Artists", ignoreCase = true) ||
@@ -159,10 +166,13 @@ fun List<Album>.findAlbumForRoute(albumId: String, albumName: String): Album? {
         .orEmpty()
     val fallbackAlbumName = routeAlbumName.ifBlank { legacyUnknownName }
 
-    return firstOrNull { it.id == routeAlbumId }
+    return firstOrNull { it.id == routeAlbumId || it.id.replace('/', '_') == routeAlbumId }
         ?: firstOrNull { album ->
             routeAlbumId.isNotBlank() &&
-                album.songs.any { it.albumId.trim() == routeAlbumId }
+                album.songs.any {
+                    val id = it.albumId.trim()
+                    id == routeAlbumId || id.replace('/', '_') == routeAlbumId
+                }
         }
         ?: fallbackAlbumName.takeIf { it.isNotBlank() }?.let { name ->
             firstOrNull { it.hasTitle(name) }

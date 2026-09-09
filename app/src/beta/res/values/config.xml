@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Beta variant configuration -->
+    <!-- Same feature set as the GitHub release; applicationId differs
+         (chromahub.rhythm.app.beta) so beta and release can coexist. -->
+
+    <!-- Feature availability flags -->
+
+    <!-- Distribution channel identifier -->
+</resources>

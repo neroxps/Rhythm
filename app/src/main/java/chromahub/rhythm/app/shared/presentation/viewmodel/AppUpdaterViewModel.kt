@@ -33,6 +33,7 @@ import chromahub.rhythm.app.network.GitHubWorkflowRun
 import chromahub.rhythm.app.network.NetworkManager
 import chromahub.rhythm.app.shared.data.model.AppSettings
 import chromahub.rhythm.app.util.ChangelogFilter
+import chromahub.rhythm.app.util.VersionComparator
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -42,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -81,37 +83,6 @@ data class ReleaseContent(
     val whatsNew: List<String>,
     val knownIssues: List<String>,
 )
-
-/**
- * Semantic version comparison helper class
- */
-private data class SemanticVersion(
-    val major: Int,
-    val minor: Int,
-    val patch: Int,
-    val subpatch: Int = 0,
-    val buildNumber: Int = 0,
-    val isPreRelease: Boolean = false,
-    val isCiBuild: Boolean = false,
-) : Comparable<SemanticVersion> {
-    override fun compareTo(other: SemanticVersion): Int {
-        // Compare major version
-        if (major != other.major) return major.compareTo(other.major)
-        // Compare minor version
-        if (minor != other.minor) return minor.compareTo(other.minor)
-        // Compare patch version
-        if (patch != other.patch) return patch.compareTo(other.patch)
-        // Compare subpatch version
-        if (subpatch != other.subpatch) return subpatch.compareTo(other.subpatch)
-        // Compare build numbers
-        if (buildNumber != other.buildNumber) return buildNumber.compareTo(other.buildNumber)
-        // Pre-releases are considered older than regular releases
-        if (isPreRelease != other.isPreRelease) {
-            return if (isPreRelease) -1 else 1
-        }
-        return 0
-    }
-}
 
 /**
  * Download state for tracking download progress and resumption
@@ -224,6 +195,9 @@ class AppUpdaterViewModel(
     private val _canProceedWithMismatchedDownload = MutableStateFlow(false)
     val canProceedWithMismatchedDownload: StateFlow<Boolean> = _canProceedWithMismatchedDownload.asStateFlow()
 
+    private val _isVersionCodeDowngrade = MutableStateFlow(false)
+    val isVersionCodeDowngrade: StateFlow<Boolean> = _isVersionCodeDowngrade.asStateFlow()
+
     // Download state - true when actively downloading
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
@@ -254,6 +228,7 @@ class AppUpdaterViewModel(
             combine(_appSettings.updateChannel, _appSettings.updateSource) { channel, source ->
                 channel to source
             }.distinctUntilChanged()
+                .drop(1)
                 .collectLatest { (channel, _) ->
                     _updateChannel.value = channel
                     // Re-check for updates if channel changes, but only if updates are enabled
@@ -410,113 +385,86 @@ class AppUpdaterViewModel(
             _latestVersion.value = null // Clear any previous version data
 
             try {
+                var candidate: AppVersion? = null
+
                 if (currentChannel == "nightly") {
+                    // 1. Fetch nightly workflow runs
+                    var nightlyCandidate: AppVersion? = null
                     val runsResponse = gitHubApiService.getWorkflowRuns(githubOwner, githubRepo, "nightly.yml")
-
                     if (runsResponse.isSuccessful) {
-                        val runsData = runsResponse.body()
-                        val latestRun = runsData?.workflow_runs?.firstOrNull { it.status == "completed" && it.conclusion == "success" }
+                        val latestRun = runsResponse.body()?.workflow_runs?.firstOrNull {
+                            it.status == "completed" && it.conclusion == "success"
+                        }
+                        if (latestRun != null) {
+                            var apkSize: Long = 0
+                            try {
+                                val artifactsResponse = gitHubApiService.getRunArtifacts(githubOwner, githubRepo, latestRun.id)
+                                if (artifactsResponse.isSuccessful) {
+                                    apkSize = artifactsResponse.body()?.artifacts?.firstOrNull {
+                                        it.name == "Rhythm-Nightly-Artifacts"
+                                    }?.size_in_bytes ?: 0
+                                }
+                            } catch (e: Exception) {
+                                Log.e(tag, "Error fetching nightly artifact size", e)
+                            }
+                            nightlyCandidate = convertWorkflowRunToAppVersion(latestRun, apkSize)
+                        }
+                    }
 
-                        if (latestRun == null) {
-                            _error.value = "No successful nightly builds found"
+                    // 2. Also fetch releases (to compare against any equal/higher Stable or Beta releases)
+                    var releaseCandidate: AppVersion? = null
+                    val releasesResponse = gitHubApiService.getReleases(githubOwner, githubRepo)
+                    if (releasesResponse.isSuccessful) {
+                        val allReleases = releasesResponse.body()
+                        if (!allReleases.isNullOrEmpty()) {
+                            val bestRelease = findLatestSuitableRelease(allReleases, "beta")
+                            if (bestRelease != null) {
+                                releaseCandidate = convertReleaseToAppVersion(bestRelease)
+                            }
+                        }
+                    }
+
+                    // 3. Rank across all tiers using VersionComparator (Higher Version Number >> Stable > Beta > Nightly)
+                    val candidates = listOfNotNull(nightlyCandidate, releaseCandidate)
+                    candidate = candidates.maxWithOrNull { c1, c2 ->
+                        VersionComparator.compare(
+                            c1.versionName,
+                            c2.versionName,
+                            isPreRelease1 = c1.isPreRelease,
+                            isPreRelease2 = c2.isPreRelease,
+                        )
+                    }
+
+                    if (candidate == null) {
+                        _error.value = "No builds or releases found on GitHub"
+                        _isCheckingForUpdates.value = false
+                        return@launch
+                    }
+                } else {
+                    val releasesResponse = gitHubApiService.getReleases(githubOwner, githubRepo)
+                    if (releasesResponse.isSuccessful) {
+                        val allReleases = releasesResponse.body()
+                        if (allReleases.isNullOrEmpty()) {
+                            _error.value = "No releases found on GitHub"
                             _isCheckingForUpdates.value = false
                             return@launch
                         }
 
-                        var apkSize: Long = 0
-                        try {
-                            val artifactsResponse = gitHubApiService.getRunArtifacts(githubOwner, githubRepo, latestRun.id)
-                            if (artifactsResponse.isSuccessful) {
-                                val artifact =
-                                    artifactsResponse.body()?.artifacts?.firstOrNull {
-                                        it.name == "Rhythm-Nightly-Artifacts"
-                                    }
-                                if (artifact != null) {
-                                    apkSize = artifact.size_in_bytes
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e(tag, "Error fetching nightly artifact size", e)
+                        val latestSuitableRelease = findLatestSuitableRelease(allReleases, currentChannel)
+                        if (latestSuitableRelease == null) {
+                            _error.value = "No suitable release found for channel '$currentChannel'"
+                            _isCheckingForUpdates.value = false
+                            return@launch
                         }
 
-                        val appVersion = convertWorkflowRunToAppVersion(latestRun, apkSize)
-                        _latestVersion.value = appVersion
-
-                        val updateAvailable =
-                            if (BuildConfig.IS_NIGHTLY) {
-                                // Currently on a nightly build: compare run numbers directly.
-                                val currentNightlyRun = extractNightlyRunNumber(BuildConfig.VERSION_NAME)
-                                val latestNightlyRun = latestRun.run_number
-                                Log.d(tag, "Nightly→Nightly comparison: current run=$currentNightlyRun vs latest run=$latestNightlyRun")
-                                latestNightlyRun > currentNightlyRun
-                            } else {
-                                // Currently on a release/beta build but user has opted into the
-                                // nightly channel. Show the nightly as an update ONLY if it was
-                                // published AFTER the current build's release date. This prevents
-                                // a pre-release-era nightly (with an older codebase) from showing
-                                // up as a false update while still letting future nightlies through.
-                                val isNightlyNewer =
-                                    try {
-                                        val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-                                        val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                                        val nightlyDate = isoFmt.parse(latestRun.updated_at)
-                                        val buildDate = dateFmt.parse(BuildConfig.RELEASE_DATE)
-                                        nightlyDate != null && buildDate != null && nightlyDate.after(buildDate)
-                                    } catch (e: Exception) {
-                                        Log.e(tag, "Error comparing nightly date vs release date", e)
-                                        false
-                                    }
-                                Log.d(
-                                    tag,
-                                    "Beta/Stable→Nightly comparison: nightly updated_at=${latestRun.updated_at}, build release date=${BuildConfig.RELEASE_DATE}, isNewer=$isNightlyNewer",
-                                )
-                                isNightlyNewer
-                            }
-
-                        _updateAvailable.value = updateAvailable
-                        _isCheckingForUpdates.value = false
-                        return@launch
+                        candidate = convertReleaseToAppVersion(latestSuitableRelease)
                     } else {
-                        val rateLimit = runsResponse.headers()["X-RateLimit-Remaining"]
-                        val rateLimitReset = runsResponse.headers()["X-RateLimit-Reset"]
-                        if (rateLimit != null) {
-                            Log.d(tag, "GitHub API rate limit remaining: $rateLimit, resets at: $rateLimitReset")
-                        }
-                        handleApiError(runsResponse.code(), runsResponse.message())
+                        handleApiError(releasesResponse.code(), releasesResponse.message())
                         return@launch
                     }
                 }
 
-                val releasesResponse = gitHubApiService.getReleases(githubOwner, githubRepo)
-
-                if (releasesResponse.isSuccessful) {
-                    val allReleases = releasesResponse.body()
-
-                    if (allReleases.isNullOrEmpty()) {
-                        _error.value = "No releases found on GitHub"
-                        _isCheckingForUpdates.value = false
-                        return@launch
-                    }
-
-                    val latestSuitableRelease = findLatestSuitableRelease(allReleases, currentChannel)
-
-                    if (latestSuitableRelease == null) {
-                        _error.value = "No suitable release found for channel '$currentChannel'"
-                        _isCheckingForUpdates.value = false
-                        return@launch
-                    }
-
-                    processRelease(latestSuitableRelease)
-                    Log.d(tag, "Latest version processed: ${_latestVersion.value}")
-                } else {
-                    // Log rate limit info if available
-                    val rateLimit = releasesResponse.headers()["X-RateLimit-Remaining"]
-                    val rateLimitReset = releasesResponse.headers()["X-RateLimit-Reset"]
-                    if (rateLimit != null) {
-                        Log.d(tag, "GitHub API rate limit remaining: $rateLimit, resets at: $rateLimitReset")
-                    }
-                    handleApiError(releasesResponse.code(), releasesResponse.message())
-                }
+                processCandidate(candidate)
             } catch (e: Exception) {
                 Log.e(tag, "Error checking for updates", e)
                 _error.value = "Network error: ${e.message ?: "Unknown error"}"
@@ -527,117 +475,29 @@ class AppUpdaterViewModel(
         }
     }
 
-    /**
-     * Process a GitHub release into app version information
-     */
-    private fun compareBaseVersions(
-        v1: SemanticVersion,
-        v2: SemanticVersion,
-    ): Int {
-        if (v1.major != v2.major) return v1.major.compareTo(v2.major)
-        if (v1.minor != v2.minor) return v1.minor.compareTo(v2.minor)
-        if (v1.patch != v2.patch) return v1.patch.compareTo(v2.patch)
-        return v1.subpatch.compareTo(v2.subpatch)
-    }
+    private fun processCandidate(candidate: AppVersion) {
+        _latestVersion.value = candidate
+        val isNewer = VersionComparator.isNewer(
+            candidate = candidate.versionName,
+            current = _currentVersion.value.versionName,
+            isCandidatePreRelease = candidate.isPreRelease,
+            isCurrentPreRelease = _currentVersion.value.isPreRelease,
+        )
+        val hasVersionCodeDowngrade = candidate.versionCode > 0 && candidate.versionCode < BuildConfig.VERSION_CODE
+        _isVersionCodeDowngrade.value = hasVersionCodeDowngrade
 
-    private fun processRelease(release: GitHubRelease) {
-        // Convert GitHub release to AppVersion
-        val appVersion = convertReleaseToAppVersion(release)
-        _latestVersion.value = appVersion
-
-        // Parse current and new versions for semantic comparison
-        val currentSemVer = parseVersionToSemantic(_currentVersion.value.versionName)
-        val newSemVer = parseVersionToSemantic(appVersion.versionName)
-
-        // Add debug logs
         Log.d(
             tag,
-            "Version comparison: current=${_currentVersion.value.versionName} ($currentSemVer) vs latest=${appVersion.versionName} ($newSemVer)",
+            "Version comparison: current=${_currentVersion.value.versionName} (code=${BuildConfig.VERSION_CODE}) vs latest=${candidate.versionName} (code=${candidate.versionCode}) -> isNewer=$isNewer, isDowngrade=$hasVersionCodeDowngrade"
         )
-
-        val isCurrentCi = currentSemVer.isCiBuild
-
-        // Update is available if:
-        // 1. New version is semantically greater than current version
-        // 2. If versions are equal, new build number is higher
-        // 3. If in pre-release, allow updates to other pre-releases
-        _updateAvailable.value =
-            when {
-                isCurrentCi -> {
-                    // If on a CI build, only update if the new version has a higher base semantic version
-                    val baseComparison = compareBaseVersions(newSemVer, currentSemVer)
-                    baseComparison > 0
-                }
-                newSemVer > currentSemVer -> true
-                newSemVer == currentSemVer && appVersion.buildNumber > _currentVersion.value.buildNumber -> true
-                _currentVersion.value.isPreRelease &&
-                    appVersion.isPreRelease &&
-                    appVersion.buildNumber > _currentVersion.value.buildNumber -> true
-                else -> false
-            }
-
-        _isCheckingForUpdates.value = false
-        lastUpdateCheck = System.currentTimeMillis()
-    }
-
-    /**
-     * Parse version string to semantic version object with improved error handling
-     */
-    private fun parseVersionToSemantic(versionString: String): SemanticVersion {
-        try {
-            // Remove 'v' prefix if present and clean up the string
-            val cleaned = versionString.trim().replace(Regex("^v"), "")
-
-            // Extract build number if present (format like "b-127" or "build-127")
-            val buildRegex = Regex("(?:b|build)-(\\d+)", RegexOption.IGNORE_CASE)
-            val buildNumber =
-                buildRegex
-                    .find(cleaned)
-                    ?.groupValues
-                    ?.get(1)
-                    ?.filter { it.isDigit() }
-                    ?.toIntOrNull() ?: 0
-
-            // Split version and remove any suffix (like -alpha, -beta, etc.)
-            val versionBase = cleaned.split(" ")[0].split("-")[0].split("_")[0]
-            val versionParts = versionBase.split(".")
-
-            // Check if it's a pre-release by looking for common pre-release keywords
-            val preReleaseKeywords = listOf("alpha", "beta", "pre", "rc", "dev", "snapshot")
-            val isPreRelease =
-                preReleaseKeywords.any { keyword ->
-                    cleaned.contains(keyword, ignoreCase = true)
-                }
-
-            // Parse version components with bounds checking
-            val major = versionParts.getOrNull(0)?.filter { it.isDigit() }?.toIntOrNull() ?: 0
-            val minor = versionParts.getOrNull(1)?.filter { it.isDigit() }?.toIntOrNull() ?: 0
-            val patch = versionParts.getOrNull(2)?.filter { it.isDigit() }?.toIntOrNull() ?: 0
-            val subpatch = versionParts.getOrNull(3)?.filter { it.isDigit() }?.toIntOrNull() ?: 0
-
-            val isCiBuild = buildRegex.containsMatchIn(cleaned)
-
-            return SemanticVersion(
-                major = major.coerceAtLeast(0),
-                minor = minor.coerceAtLeast(0),
-                patch = patch.coerceAtLeast(0),
-                subpatch = subpatch.coerceAtLeast(0),
-                buildNumber = (buildNumber.takeIf { it > 0 } ?: extractBuildNumber(cleaned, versionParts)).coerceAtLeast(0),
-                isPreRelease = isPreRelease,
-                isCiBuild = isCiBuild,
-            )
-        } catch (e: Exception) {
-            Log.e(tag, "Error parsing version: $versionString", e)
-            // Return a default semantic version instead of crashing
-            return SemanticVersion(0, 0, 0, 0, 0, false)
-        }
+        _updateAvailable.value = isNewer
     }
 
     private fun extractBuildNumber(
         versionString: String,
         versionParts: List<String>? = null,
     ): Int {
-        val cleaned = versionString.trim().removePrefix("v")
+        val cleaned = versionString.trim().removePrefix("v").removePrefix("V")
         val buildRegex = Regex("(?:b|build)-(\\d+)", RegexOption.IGNORE_CASE)
         val explicitBuildNumber =
             buildRegex
@@ -660,7 +520,7 @@ class AppUpdaterViewModel(
     }
 
     private fun calculateVersionCode(versionString: String): Int {
-        val cleaned = versionString.trim().removePrefix("v")
+        val cleaned = versionString.trim().removePrefix("v").removePrefix("V")
         val versionBase = cleaned.split(" ")[0].split("-")[0].split("_")[0]
         val versionParts = versionBase.split(".")
         val codeString =
@@ -700,6 +560,7 @@ class AppUpdaterViewModel(
      * Find the latest suitable release based on the update channel.
      * "stable" channel: latest non-prerelease, non-draft release
      * "beta" channel: latest release (including pre-releases) that is not a draft
+     * Ranks candidates using VersionComparator (Higher Version Number >> Stable > Beta).
      */
     private fun findLatestSuitableRelease(
         releases: List<GitHubRelease>,
@@ -715,18 +576,18 @@ class AppUpdaterViewModel(
                 }
             }
 
-        // Sort by published date descending and return the first (most recent)
-        return filteredReleases
-            .sortedByDescending { it.published_at }
-            .firstOrNull()
+        return filteredReleases.maxWithOrNull { r1, r2 ->
+            val v1 = r1.name.ifEmpty { r1.tag_name }
+            val v2 = r2.name.ifEmpty { r2.tag_name }
+            VersionComparator.compare(v1, v2, isPreRelease1 = r1.prerelease, isPreRelease2 = r2.prerelease)
+        }
     }
 
     /**
      * Convert a GitHub release to an AppVersion object
      */
     private fun convertReleaseToAppVersion(release: GitHubRelease): AppVersion {
-        // Parse version string to semantic version
-        val semanticVersion = parseVersionToSemantic(release.tag_name)
+        val semanticVersion = VersionComparator.parse(release.tag_name, isPreRelease = release.prerelease)
 
         // Format the release date
         val releaseDateString =
@@ -744,15 +605,8 @@ class AppUpdaterViewModel(
         Log.d(tag, "Parsed whatsNew: ${releaseContent.whatsNew}")
         Log.d(tag, "Parsed knownIssues: ${releaseContent.knownIssues}")
 
-        // Pick the APK that matches the installed flavor and prefer the universal APK.
-        // This keeps OTA aligned with the current distribution channel instead of
-        // accidentally falling back to a different build flavor.
         val apkAsset = selectReleaseApkAsset(release)
-
-        // Get download URL, preferring an APK asset if available
         val downloadUrl = apkAsset?.browser_download_url ?: release.html_url
-
-        // Format APK size for display if available
         val apkSize = apkAsset?.size ?: 0
         val versionName = release.name.ifEmpty { release.tag_name }
 

@@ -7,6 +7,11 @@
 
 package chromahub.rhythm.app.shared.presentation.screens.settings
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.StandardBottomSheetHeader
+
 
 
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
@@ -14,6 +19,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.MaterialSymbolIcon
 import chromahub.rhythm.app.shared.presentation.components.icons.Icon
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.ShapePresetsBottomSheet
 
 import android.app.Activity
 import android.content.ClipData
@@ -49,6 +55,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -86,7 +93,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -378,7 +384,6 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
                     TunerAnimatedSwitch(
                         checked = expressiveShapesEnabled,
                         onCheckedChange = { enabled ->
-                            HapticUtils.performHapticFeedback(context, haptic, HapticType.HEAVY)
                             appSettings.setExpressiveShapesEnabled(enabled)
                         }
                     )
@@ -634,169 +639,16 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
     
     // Preset Selection Bottom Sheet
     if (showPresetDialog) {
-        val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
-        var showPresetContent by remember { mutableStateOf(false) }
-
-        LaunchedEffect(Unit) {
-            delay(100)
-            showPresetContent = true
-        }
-
-        LaunchedEffect(sheetState) {
-            sheetState.expand()
-        }
-
-        ModalBottomSheet(
-            onDismissRequest = { showPresetDialog = false },
-            sheetState = sheetState,
-            dragHandle = {
-                BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary)
-            },
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight()
-                    .verticalScroll(rememberScrollState())
-                    .padding(bottom = 24.dp)
-            ) {
-                // Header with animation
-                StandardBottomSheetHeader(
-                    title = stringResource(R.string.expressiveshapessettingsscreen_choose_a_preset),
-                    subtitle = stringResource(R.string.expressiveshapessettingsscreen_select_a_theme_for),
-                    visible = showPresetContent
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                ) {
-                    presets.forEach { preset ->
-                        val isSelected = preset.id == currentPreset
-
-                        // Master animation states
-                        var isPressed by remember { mutableStateOf(false) }
-                        val scale by animateFloatAsState(
-                            targetValue = if (isPressed) 0.96f else 1f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
-                            ),
-                            label = "preset_scale"
-                        )
-
-                        val containerColor by animateColorAsState(
-                            targetValue = if (isSelected)
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            else
-                                MaterialTheme.colorScheme.surfaceContainerHigh,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            ),
-                            label = "preset_container_color"
-                        )
-
-                        Card(
-                            onClick = {
-                                HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
-                                isPressed = true
-                                appSettings.applyExpressiveShapePreset(preset.id)
-                                showPresetDialog = false
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                },
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = containerColor
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 20.dp, vertical = 18.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = preset.icon,
-                                        contentDescription = preset.displayName,
-                                        tint = if (isSelected)
-                                            MaterialTheme.colorScheme.primaryContainer
-                                        else
-                                            MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(32.dp)
-                                    )
-                                    Column {
-                                        Text(
-                                            text = getLocalizedPresetName(preset.id),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = FontWeight.Medium,
-                                            color = if (isSelected)
-                                                MaterialTheme.colorScheme.primaryContainer
-                                            else
-                                                MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Text(
-                                            text = getLocalizedPresetDesc(preset.id),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = if (isSelected)
-                                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
-                                            else
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Checkbox(
-                                    checked = isSelected,
-                                    onCheckedChange = null,
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = MaterialTheme.colorScheme.primary,
-                                        checkmarkColor = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                )
-                            }
-                        }
-
-                        // Reset press state
-                        LaunchedEffect(isPressed) {
-                            if (isPressed) {
-                                delay(150)
-                                isPressed = false
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        ShapePresetsBottomSheet(
+            onDismiss = { showPresetDialog = false },
+            appSettings = appSettings
+        )
     }
 
     // Individual Shape Picker Bottom Sheet
     showShapePickerDialog?.let { targetId ->
         val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
         val targetName = shapeTargets.find { it.first == targetId }?.second?.first ?: targetId
-        var showShapeContent by remember { mutableStateOf(false) }
-
-        LaunchedEffect(Unit) {
-            delay(100)
-            showShapeContent = true
-        }
 
         LaunchedEffect(sheetState) {
             sheetState.expand()
@@ -815,8 +667,10 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
 
         // Group shapes by category
         val groupedShapes = allShapes.groupBy { it.category }
+        val shapeGridState = rememberLazyGridState()
 
-        ModalBottomSheet(
+        RhythmAdaptiveModalSheet(
+            adaptiveType = SheetAdaptiveType.AUTO_DIALOG,
             onDismissRequest = { showShapePickerDialog = null },
             sheetState = sheetState,
             dragHandle = {
@@ -826,30 +680,23 @@ fun ExpressiveShapesSettingsScreen(onBackClick: () -> Unit) {
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight()
-                    .padding(bottom = 24.dp)
-            ) {
-                // Header with animation
-                StandardBottomSheetHeader(
-                                    title = stringResource(R.string.settings_shape_for, getLocalizedTargetName(targetId)),
-                                    subtitle = stringResource(R.string.expressiveshapessettingsscreen_choose_an_expressive_shape),
-                                    visible = showShapeContent
-                                )
+            StandardBottomSheetHeader(
+                title = stringResource(R.string.settings_shape_for, getLocalizedTargetName(targetId)),
+                subtitle = stringResource(R.string.expressiveshapessettingsscreen_choose_an_expressive_shape),
+                visible = true
+            )
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Shape options in a grid
+            AdaptiveSheetScrollContainer(
+                gridState = shapeGridState,
+                modifier = Modifier.fillMaxWidth()
+            ) { endPadding ->
                 LazyVerticalGrid(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
+                    state = shapeGridState,
+                    modifier = Modifier.fillMaxWidth(),
                     columns = GridCells.Fixed(2),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
+                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp + endPadding, top = 8.dp, bottom = 24.dp)
                 ) {
                     groupedShapes.forEach { (category, shapes) ->
                         item(key = "category_$category", span = { GridItemSpan(2) }) {

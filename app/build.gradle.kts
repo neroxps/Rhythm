@@ -32,11 +32,11 @@ android {
         
         val overrideVersionCode = project.findProperty("versionCodeOverride")?.toString()?.toIntOrNull()
         val overrideVersionName = project.findProperty("versionNameOverride")?.toString()
-        versionCode = overrideVersionCode ?: 544641229
-        versionName = overrideVersionName ?: "5.4.464.1229 Beta"
+        versionCode = overrideVersionCode ?: 554801261
+        versionName = overrideVersionName ?: "5.5.480.1261"
 
         val overrideReleaseDate = project.findProperty("releaseDateOverride")?.toString()
-        buildConfigField("String", "RELEASE_DATE", "\"${overrideReleaseDate ?: "2026-08-25"}\"")
+        buildConfigField("String", "RELEASE_DATE", "\"${overrideReleaseDate ?: "2026-09-06"}\"")
 
         val isNightly = project.findProperty("nightly")?.toString() == "true"
         buildConfigField("boolean", "IS_NIGHTLY", isNightly.toString())
@@ -90,6 +90,27 @@ android {
             buildConfigField("String", "FLAVOR", "\"github\"")
             
             versionNameSuffix = "-gh"
+        }
+        
+        // Beta test build: separate applicationId (chromahub.rhythm.app.beta)
+        // and app label "Rhythm Beta" so it can coexist with the installed
+        // release build and never overwrite it. Used for testing new features
+        // (e.g. Emby audiobook mode + streaming recovery) before release.
+        create("beta") {
+            dimension = "distribution"
+            applicationId = "chromahub.rhythm.app.beta"
+            
+            // Same feature set as GitHub release for representative testing.
+            buildConfigField("boolean", "ENABLE_YOUTUBE_MUSIC", "true")
+            buildConfigField("boolean", "ENABLE_LYRICALLY_API", "true")
+            buildConfigField("boolean", "ENABLE_DEEZER", "true")
+            buildConfigField("boolean", "ENABLE_LRCLIB", "true")
+            buildConfigField("boolean", "ENABLE_BETTERLYRICS", "true")
+            buildConfigField("boolean", "ENABLE_SPOTIFY_SEARCH", "true")
+            buildConfigField("boolean", "ENABLE_WIKIPEDIA", "true")
+            buildConfigField("String", "FLAVOR", "\"beta\"")
+            
+            versionNameSuffix = "-beta"
         }
     }
 

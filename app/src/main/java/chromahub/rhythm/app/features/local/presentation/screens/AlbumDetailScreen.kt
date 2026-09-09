@@ -29,8 +29,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -46,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import chromahub.rhythm.app.R
@@ -87,6 +90,7 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.sp
+import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
 import chromahub.rhythm.app.util.windowScreenWidthDp
 import chromahub.rhythm.app.util.windowScreenHeightDp
 import chromahub.rhythm.app.util.NaturalSortComparator
@@ -105,6 +109,24 @@ private data class AlbumSongDisplayState(
     val selectedDisc: Int = 0,
     val totalDuration: Long = 0L
 )
+
+/**
+ * Progress of one audiobook chapter, derived from server UserData.
+ * Rendered as a small badge on the album song row and used to build the
+ * "Continue listening" primary action.
+ */
+data class AlbumChapterProgress(
+    val songId: String = "",
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val isFinished: Boolean = false,
+    val lastPlayedMs: Long = 0L,
+    /** Human label for the chapter, e.g. "第842集" or the chapter title. */
+    val chapterLabel: String = ""
+) {
+    val fraction: Float
+        get() = if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+}
 
 private fun String.toAlbumSortOrder(): AlbumSortOrder {
     return runCatching { AlbumSortOrder.valueOf(this) }.getOrDefault(AlbumSortOrder.TRACK_NUMBER)
@@ -181,6 +203,7 @@ fun AlbumDetailScreen(
     albumName: String,
     onBack: () -> Unit,
     onSongClick: (Song) -> Unit,
+    onSongClickInContext: (Song, List<Song>) -> Unit = { song, _ -> onSongClick(song) },
     onPlayAll: (List<Song>) -> Unit,
     onShufflePlay: (List<Song>) -> Unit,
     onAddToQueue: (Song) -> Unit,
@@ -208,6 +231,16 @@ fun AlbumDetailScreen(
         onComplete: (successCount: Int, failCount: Int) -> Unit
     ) -> Unit)? = null,
     isStreamingMode: Boolean = false,
+    /** Hid the shuffle button — used for audiobook (book mode) playback. */
+    hideShuffle: Boolean = false,
+    /**
+     * Optional per-chapter progress from server UserData (positionMs + duration).
+     * Used only in streaming mode to render "已播 xx%" badges and a
+     * "Continue listening" primary action. Null = no progress info.
+     */
+    chapterProgress: (Song) -> AlbumChapterProgress? = { null },
+    /** When non-null the primary action becomes "继续播放（第 N 集）". */
+    onContinueBook: ((AlbumChapterProgress) -> Unit)? = null,
     viewModel: MusicViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -227,12 +260,19 @@ fun AlbumDetailScreen(
 
     val allAlbums by viewModel.albums.collectAsState()
     val allArtists by viewModel.artists.collectAsState()
+    val allLibrarySongs by viewModel.filteredSongs.collectAsState()
     val album = remember(allAlbums, albumId, albumName, albumOverride) {
         albumOverride ?: allAlbums.findAlbumForRoute(albumId, albumName)
     }
 
-    val allDisplaySongs = remember(album, songsOverride) {
-        songsOverride ?: album?.songs ?: emptyList()
+    val allDisplaySongs = remember(album, songsOverride, allLibrarySongs, albumId, albumName) {
+        songsOverride ?: album?.songs?.takeIf { it.isNotEmpty() } ?: run {
+            val matchingSongs = allLibrarySongs.filter { song ->
+                (albumId.isNotBlank() && song.albumId.trim() == albumId.trim()) ||
+                (albumName.isNotBlank() && song.album.trim().equals(albumName.trim(), ignoreCase = true))
+            }
+            matchingSongs.takeIf { it.isNotEmpty() } ?: album?.songs ?: emptyList()
+        }
     }
 
     val sortOrder = remember(savedSortOrder) { savedSortOrder.toAlbumSortOrder() }
@@ -249,12 +289,26 @@ fun AlbumDetailScreen(
     val selectedDisc = songDisplayState.selectedDisc
     val shouldShowDiscFilter = !libraryCombineDiscs && availableDiscs.size > 1
 
+    // Streaming book mode: find the chapter with unfinished progress for the
+    // "Continue listening" primary action and per-row progress badges.
+    val chapterProgressMap = remember(displaySongs, isStreamingMode) {
+        if (!isStreamingMode) emptyMap() else displaySongs.mapNotNull { song ->
+            chapterProgress(song)?.let { song.id to it }
+        }.toMap()
+    }
+    val continueProgress = remember(chapterProgressMap) {
+        val unfinished = chapterProgressMap.values.filter { it.positionMs > 0 && !it.isFinished }
+        if (unfinished.isEmpty()) return@remember null
+        // Prefer the most recently played; fall back to the highest position.
+        unfinished.maxByOrNull { it.lastPlayedMs } ?: unfinished.maxByOrNull { it.positionMs }
+    }
+
     // Multi-artist picker state
     var showArtistPicker by remember { mutableStateOf(false) }
     var artistPickerCandidates by remember { mutableStateOf<List<Artist>>(emptyList()) }
     var artistPickerSong by remember { mutableStateOf<Song?>(null) }
 
-    val effectiveDelimiters = artistSeparatorDelimiters.ifBlank { "/;,+&" }
+    val effectiveDelimiters = artistSeparatorDelimiters.ifBlank { AppSettings.DEFAULT_ARTIST_SEPARATOR_DELIMITERS }
 
     fun handleArtistTap(song: Song) {
         val candidates = ArtistSeparator.splitArtistNames(
@@ -311,11 +365,11 @@ fun AlbumDetailScreen(
     var canvasArtwork by remember(albumId) { mutableStateOf<CanvasArtwork?>(null) }
     var canvasLoading by remember(albumId) { mutableStateOf(false) }
 
-    LaunchedEffect(albumId, albumName, album?.artist, appleCanvasEnabled, appleCanvasNetworkMode) {
+    LaunchedEffect(albumId, albumName, album?.artist, allDisplaySongs, appleCanvasEnabled, appleCanvasNetworkMode) {
         canvasArtwork = null
         canvasLoading = false
 
-        val artistName = album?.artist
+        val artistName = album?.artist ?: allDisplaySongs.firstOrNull()?.artist
         if (albumName.isNotBlank() && artistName != null && appleCanvasEnabled) {
             val hasNetwork = if (appleCanvasNetworkMode == CanvasNetworkMode.WIFI_ONLY) {
                 NetworkUtils.isWifiConnected(context)
@@ -343,8 +397,8 @@ fun AlbumDetailScreen(
     LaunchedEffect(addToQueuePressed) { if (addToQueuePressed) { delay(150); addToQueuePressed = false } }
 
     val totalDuration = songDisplayState.totalDuration
-    val aggregatedArtists = remember(album?.songs, effectiveDelimiters, artistSeparatorEnabled) {
-        (album?.songs ?: emptyList()).flatMap { song ->
+    val aggregatedArtists = remember(allDisplaySongs, effectiveDelimiters, artistSeparatorEnabled) {
+        allDisplaySongs.flatMap { song ->
             ArtistSeparator.splitArtistNames(
                 song.artist,
                 delimiters = effectiveDelimiters,
@@ -352,11 +406,13 @@ fun AlbumDetailScreen(
             )
         }.distinct().sorted()
     }
-    val displayArtist = aggregatedArtists.joinToString(", ").ifEmpty { album?.artist ?: "Unknown Artist" }
-    val displayArtworkUri = album?.artworkUri
+    val displayArtist = aggregatedArtists.joinToString(", ").ifEmpty {
+        album?.artist ?: allDisplaySongs.firstOrNull()?.artist ?: "Unknown Artist"
+    }
+    val displayArtworkUri = album?.artworkUri ?: allDisplaySongs.firstNotNullOfOrNull { it.artworkUri }
     val hasCanvas = appleCanvasEnabled && canvasArtwork != null
     val backgroundColor = MaterialTheme.colorScheme.background
-    val isLoading = isContentLoadingOverride ?: (album == null)
+    val isLoading = isContentLoadingOverride ?: (album == null && allDisplaySongs.isEmpty())
 
     if (isLandscapeTablet) {
         // Animated infinite transition for backdrop orbs (like full-screen lyrics view)
@@ -568,25 +624,27 @@ fun AlbumDetailScreen(
                                     },
                                     height = 50.dp,
                                     isFirst = true,
-                                    isLast = false,
+                                    isLast = hideShuffle,
                                     icon = RhythmIcons.Play,
                                     text = stringResource(R.string.action_play_all),
                                     fontWeight = FontWeight.Bold
                                 )
 
-                                RhythmDetailActionButton(
-                                    onClick = {
-                                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
-                                        onShufflePlay(displaySongs)
-                                    },
-                                    height = 50.dp,
-                                    type = RhythmButtonType.Tonal,
-                                    isFirst = false,
-                                    isLast = true,
-                                    icon = RhythmIcons.Shuffle,
-                                    text = stringResource(R.string.action_shuffle),
-                                    fontWeight = FontWeight.Medium
-                                )
+                                if (!hideShuffle) {
+                                    RhythmDetailActionButton(
+                                        onClick = {
+                                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                            onShufflePlay(displaySongs)
+                                        },
+                                        height = 50.dp,
+                                        type = RhythmButtonType.Tonal,
+                                        isFirst = false,
+                                        isLast = true,
+                                        icon = RhythmIcons.Shuffle,
+                                        text = stringResource(R.string.action_shuffle),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
                             }
                         }
                     }
@@ -639,7 +697,7 @@ fun AlbumDetailScreen(
                                                 currentSong = currentSong,
                                                 isPlaying = isPlaying,
                                                 useHoursFormat = useHoursFormat,
-                                                onClick = { onSongClick(song) },
+                                                onClick = { onSongClickInContext(song, displaySongs) },
                                                 onMoreClick = {
                                                     selectedSongForOptions = song
                                                     showSongOptionsSheet = true
@@ -670,6 +728,7 @@ fun AlbumDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(450.dp)
+                        .clipToBounds()
                         .graphicsLayer {
                             alpha = expandedAlpha
                             // Zoom in effect: art scales up as user scrolls down
@@ -677,53 +736,58 @@ fun AlbumDetailScreen(
                             scaleY = 1f + collapsedFraction * 0.15f
                         }
                 ) {
-                    if (displayArtworkUri != null) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .apply(ImageUtils.buildImageRequest(displayArtworkUri, albumName, context.cacheDir, M3PlaceholderType.ALBUM))
-                                .build(),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                    ) {
+                        if (displayArtworkUri != null) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .apply(ImageUtils.buildImageRequest(displayArtworkUri, albumName, context.cacheDir, M3PlaceholderType.ALBUM))
+                                    .build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(
+                                                MaterialTheme.colorScheme.primaryContainer,
+                                                MaterialTheme.colorScheme.tertiaryContainer
+                                            )
+                                        )
+                                    )
+                            )
+                        }
+
+                        if (hasCanvas) {
+                            CanvasArtworkPlayer(
+                                primaryUrl = canvasArtwork?.animated,
+                                fallbackUrl = canvasArtwork?.videoUrl,
+                                alwaysPlay = true,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(
-                                    Brush.linearGradient(
+                                    Brush.verticalGradient(
                                         colors = listOf(
-                                            MaterialTheme.colorScheme.primaryContainer,
-                                            MaterialTheme.colorScheme.tertiaryContainer
+                                            Color.Transparent,
+                                            backgroundColor.copy(alpha = 0.6f),
+                                            backgroundColor
                                         )
                                     )
                                 )
                         )
                     }
-
-                    if (hasCanvas) {
-                        CanvasArtworkPlayer(
-                            primaryUrl = canvasArtwork?.animated,
-                            fallbackUrl = canvasArtwork?.videoUrl,
-                            alwaysPlay = true,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    // Gradient overlay
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        backgroundColor.copy(alpha = 0.6f),
-                                        backgroundColor
-                                    )
-                                )
-                            )
-                    )
 
                     // Album info — bottom aligned, slides up with collapse
                     Column(
@@ -746,7 +810,7 @@ fun AlbumDetailScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         // Merge artist + tracks together, year+quality BIG on right spanning both lines
-                        val albumYear = album?.year
+                        val albumYear = album?.year ?: allDisplaySongs.firstNotNullOfOrNull { it.year.takeIf { y -> y > 0 } }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -905,6 +969,43 @@ fun AlbumDetailScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(end = 12.dp)
                                 ) {
+                                    if (isStreamingMode && albumId.isNotBlank()) {
+                                        val markedAudiobook by appSettings.audiobookAlbumIds.collectAsState()
+                                        val isAudiobook = markedAudiobook.contains(albumId)
+                                        IconButton(
+                                            onClick = {
+                                                HapticUtils.performHapticFeedback(context, haptics, HapticType.LIGHT)
+                                                appSettings.setAudiobookAlbum(albumId, !isAudiobook)
+                                            },
+                                            modifier = Modifier.size(40.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .clip(RoundedCornerShape(50))
+                                                    .background(
+                                                        if (isAudiobook) {
+                                                            MaterialTheme.colorScheme.primaryContainer
+                                                        } else {
+                                                            MaterialTheme.colorScheme.surfaceContainerHigh
+                                                        }
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = RhythmIcons.Audiobook,
+                                                    contentDescription = stringResource(R.string.album_mark_audiobook),
+                                                    tint = if (isAudiobook) {
+                                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurface
+                                                    },
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
                                     Box {
                                         FilledIconButton(
                                             onClick = { showSortMenu = true },
@@ -975,14 +1076,14 @@ fun AlbumDetailScreen(
                 // Interpolate content top padding between artwork height (expanded) and top bar height (collapsed)
                 val dynamicTopPadding = 450.dp + (collapsedTopPadding - 450.dp) * collapsedFraction
 
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(top = dynamicTopPadding)
                 ) {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 450.dp),
+                        contentPadding = PaddingValues(bottom = (LocalMiniPlayerPadding.current.calculateBottomPadding() + 24.dp).coerceAtLeast(100.dp)),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         if (!isLoading) {
@@ -1011,25 +1112,45 @@ fun AlbumDetailScreen(
                                                 },
                                                 height = 52.dp,
                                                 isFirst = true,
-                                                isLast = false,
+                                                isLast = hideShuffle && continueProgress == null,
                                                 icon = RhythmIcons.Play,
                                                 text = stringResource(R.string.action_play_all),
                                                 fontWeight = FontWeight.Bold
                                             )
 
-                                            RhythmDetailActionButton(
-                                                onClick = {
-                                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
-                                                    onShufflePlay(displaySongs)
-                                                },
-                                                height = 52.dp,
-                                                type = RhythmButtonType.Tonal,
-                                                isFirst = false,
-                                                isLast = true,
-                                                icon = RhythmIcons.Shuffle,
-                                                text = stringResource(R.string.action_shuffle),
-                                                fontWeight = FontWeight.Medium
-                                            )
+                                            if (continueProgress != null) {
+                                                RhythmDetailActionButton(
+                                                    onClick = {
+                                                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                                        onContinueBook?.invoke(continueProgress)
+                                                    },
+                                                    height = 52.dp,
+                                                    type = RhythmButtonType.Tonal,
+                                                    isFirst = false,
+                                                    isLast = hideShuffle,
+                                                    icon = RhythmIcons.Audiobook,
+                                                    text = stringResource(R.string.action_continue_book, continueProgress.chapterLabel),
+                                                    fontWeight = FontWeight.Bold,
+                                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                                )
+                                            }
+
+                                            if (!hideShuffle) {
+                                                RhythmDetailActionButton(
+                                                    onClick = {
+                                                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                                        onShufflePlay(displaySongs)
+                                                    },
+                                                    height = 52.dp,
+                                                    type = RhythmButtonType.Tonal,
+                                                    isFirst = false,
+                                                    isLast = true,
+                                                    icon = RhythmIcons.Shuffle,
+                                                    text = stringResource(R.string.action_shuffle),
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
                                         }
 
                                         FilledTonalButton(
@@ -1114,7 +1235,8 @@ fun AlbumDetailScreen(
                                         currentSong = currentSong,
                                         isPlaying = isPlaying,
                                         useHoursFormat = useHoursFormat,
-                                        onClick = { onSongClick(song) },
+                                        progress = if (isStreamingMode) chapterProgress(song) else null,
+                                        onClick = { onSongClickInContext(song, displaySongs) },
                                         onMoreClick = {
                                             selectedSongForOptions = song
                                             showSongOptionsSheet = true
@@ -1124,6 +1246,29 @@ fun AlbumDetailScreen(
                             }
                         }
                     }
+
+                    val headerBlendAlpha by animateFloatAsState(
+                        targetValue = ((collapsedFraction - 0.65f) / 0.35f).coerceIn(0f, 1f),
+                        animationSpec = tween(250),
+                        label = "albumHeaderBlendAlpha"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .height(24.dp)
+                            .graphicsLayer { alpha = headerBlendAlpha }
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        backgroundColor,
+                                        backgroundColor.copy(alpha = 0.72f),
+                                        backgroundColor.copy(alpha = 0.32f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
                 }
             }
         }
@@ -1153,7 +1298,7 @@ fun AlbumDetailScreen(
                 onShare(selectedSongForOptions!!)
                 showSongOptionsSheet = false
             },
-            onRemoveFromPlaylist = { }, // Not applicable to Album screen
+            onRemoveFromPlaylist = { },
             onPlayNext = {
                 onPlayNext(selectedSongForOptions!!)
                 showSongOptionsSheet = false
@@ -1172,14 +1317,14 @@ fun AlbumDetailScreen(
                 onShowSongInfo(selectedSongForOptions!!)
                 showSongOptionsSheet = false
             },
-            onGoToAlbum = { /* Hidden for album screen */ },
+            onGoToAlbum = { },
             onGoToArtist = {
                 val song = selectedSongForOptions!!
                 showSongOptionsSheet = false
                 handleArtistTap(song)
             },
-            showRemoveFromPlaylist = false, // Always hide for albums
-            showGoToAlbum = false,         // Already on the album screen
+            showRemoveFromPlaylist = false,
+            showGoToAlbum = false,
             isStreamingMode = isStreamingMode,
             onDeleteSong = {
                 viewModel.deleteSong(selectedSongForOptions!!)
@@ -1418,6 +1563,7 @@ private fun AlbumSongItem(
     useHoursFormat: Boolean = false,
     index: Int = 0,
     totalCount: Int = 0,
+    progress: AlbumChapterProgress? = null,
     itemShape: RoundedCornerShape? = null
 ) {
     val context = LocalContext.current
@@ -1521,6 +1667,33 @@ private fun AlbumSongItem(
                         iconSize = 16.dp,
                         padding = 0.dp,
                         modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+
+            if (progress != null && progress.positionMs > 0) {
+                val fraction = if (progress.durationMs > 0) {
+                    progress.positionMs.toFloat() / progress.durationMs.toFloat()
+                } else {
+                    0f
+                }
+                val label = if (progress.isFinished) {
+                    "✓"
+                } else if (fraction > 0f) {
+                    "${(fraction * 100).toInt()}%"
+                } else {
+                    ""
+                }
+                if (label.isNotBlank()) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (progress.isFinished) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.tertiary
+                        },
+                        modifier = Modifier.padding(end = 8.dp)
                     )
                 }
             }

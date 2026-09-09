@@ -54,6 +54,9 @@ import chromahub.rhythm.app.shared.data.model.Queue
 import chromahub.rhythm.app.shared.data.model.Song
 import chromahub.rhythm.app.shared.data.model.FolderNode
 import chromahub.rhythm.app.infrastructure.service.MediaPlaybackService
+import chromahub.rhythm.app.infrastructure.service.player.PlaybackErrorCenter
+import chromahub.rhythm.app.infrastructure.service.player.StreamingRecoveryController
+import chromahub.rhythm.app.infrastructure.service.player.StreamingRecoveryPolicy
 import chromahub.rhythm.app.infrastructure.widget.WidgetUpdater
 import chromahub.rhythm.app.util.AudioDeviceManager
 import chromahub.rhythm.app.util.EqualizerUtils
@@ -100,8 +103,8 @@ import com.google.gson.reflect.TypeToken
 import java.util.Calendar
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
-import chromahub.rhythm.app.shared.data.model.LyricsData // Import LyricsData
-import chromahub.rhythm.app.util.PendingWriteRequest // Import for metadata write requests
+import chromahub.rhythm.app.shared.data.model.LyricsData
+import chromahub.rhythm.app.util.PendingWriteRequest
 import chromahub.rhythm.app.util.PendingBatchWriteRequest
 import chromahub.rhythm.app.util.PendingLyricsWriteRequest
 import chromahub.rhythm.app.util.PendingDeleteRequest
@@ -112,7 +115,7 @@ import chromahub.rhythm.app.util.LyricLine
 import chromahub.rhythm.app.util.LyricsParser
 import chromahub.rhythm.app.util.ServiceStartUtils
 import chromahub.rhythm.app.utils.StatusBroadcaster
-import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository // Import for enhanced stats tracking
+import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -605,7 +608,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             return@withContext songs
         }
         if (useWhitelistMode && !hasWhitelist) {
-            return@withContext songs
+            return@withContext emptyList()
         }
         
         // Check if filter settings changed (to clear cache)
@@ -827,7 +830,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         appSettings.artistSeparatorDelimiters
     ) { artists, filteredSongs, groupByAlbumArtist, artistSeparatorEnabled, artistSeparatorDelimiters ->
         val charDelimiters = if (artistSeparatorEnabled) {
-            artistSeparatorDelimiters.map { it.toString() }
+            chromahub.rhythm.app.util.ArtistSeparator.parseDelimiters(artistSeparatorDelimiters)
         } else {
             emptyList()
         }
@@ -899,9 +902,59 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _corruptedTrackMessage = MutableStateFlow("")
     val corruptedTrackMessage: StateFlow<String> = _corruptedTrackMessage.asStateFlow()
 
+    // Detailed playback failure from the recovery controller (streaming 断流).
+    private val _playbackFailure = MutableStateFlow<PlaybackErrorCenter.PlaybackFailure?>(null)
+    val playbackFailure: StateFlow<PlaybackErrorCenter.PlaybackFailure?> = _playbackFailure.asStateFlow()
+
+    private val _recoveryRetrying = MutableStateFlow(false)
+    val recoveryRetrying: StateFlow<Boolean> = _recoveryRetrying.asStateFlow()
+
+    /** True while the current queue is an audiobook (sequential playback). */
+    private val _isAudiobookQueue = MutableStateFlow(false)
+    val isAudiobookQueue: StateFlow<Boolean> = _isAudiobookQueue.asStateFlow()
+
     fun dismissCorruptionDialog() {
         _showCorruptionDialog.value = false
         _corruptedTrackMessage.value = ""
+        _playbackFailure.value = null
+    }
+
+    /**
+     * Request the playback service to retry the failed streaming track.
+     * Falls back to a simple pause+play when the service isn't reachable.
+     */
+    fun retryFailedStreaming() {
+        _showCorruptionDialog.value = false
+        _playbackFailure.value = null
+        viewModelScope.launch {
+            mediaController?.let { controller ->
+                try {
+                    controller.play()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to retry playback", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Builds a human-readable, actionable error message for the corruption
+     * dialog from the recorded playback failure (code name, cause chain,
+     * attempt count, track info).
+     */
+    private fun buildDetailedErrorMessage(failure: PlaybackErrorCenter.PlaybackFailure): String {
+        return buildString {
+            append("播放中断（网络/流源错误）\n")
+            append("错误: ").append(failure.errorCodeName).append(" (").append(failure.errorCode).append(")\n")
+            if (failure.errorMessage.isNotBlank()) {
+                append("详情: ").append(failure.errorMessage).append("\n")
+            }
+            if (failure.causeChain.isNotBlank()) {
+                append("原因链: ").append(failure.causeChain).append("\n")
+            }
+            append("重试次数: ").append(failure.attemptCount).append("/")
+                .append(StreamingRecoveryController.MAX_ATTEMPTS)
+        }
     }
 
     private val _currentSong = MutableStateFlow<Song?>(null)
@@ -1123,16 +1176,27 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun handleQueueActionChoice(song: Song, clearQueue: Boolean) {
         _queueActionRequest.value = null
         if (clearQueue) {
+            val keepShuffle = appSettings.keepShuffleOnSelection.value && _isShuffleEnabled.value
             // Replace queue with contextual queue or single song
             val shouldAutoAddToQueue = autoAddToQueue.value
             if (shouldAutoAddToQueue) {
                 val contextualQueue = createContextualQueue(song)
                 if (contextualQueue.size > 1) {
-                    playQueue(contextualQueue, enableShuffle = false)
+                    playQueue(
+                        contextualQueue,
+                        enableShuffle = keepShuffle,
+                        startIndex = 0,
+                        pinStartIndex = keepShuffle
+                    )
                     return
                 }
             }
-            playQueue(listOf(song), enableShuffle = false)
+            playQueue(
+                listOf(song),
+                enableShuffle = keepShuffle,
+                startIndex = 0,
+                pinStartIndex = keepShuffle
+            )
         } else {
             // Add to existing queue and play it
             val currentQueueSongs = _currentQueue.value.songs.toMutableList()
@@ -1208,6 +1272,23 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     init {
         Log.d(TAG, "Initializing MusicViewModel")
         startLibrarySetupCompletionMonitor()
+
+        // Wire the playback failure hub (streaming recovery results) into the UI.
+        viewModelScope.launch {
+            PlaybackErrorCenter.currentFailure.collect { failure ->
+                if (failure != null) {
+                    _playbackFailure.value = failure
+                    _corruptedTrackName.value = failure.trackTitle
+                    _corruptedTrackMessage.value = buildDetailedErrorMessage(failure)
+                    _showCorruptionDialog.value = true
+                }
+            }
+        }
+        viewModelScope.launch {
+            PlaybackErrorCenter.retrying.collect { retrying ->
+                _recoveryRetrying.value = retrying
+            }
+        }
         
         // Single coroutine for main initialization to ensure proper ordering
         viewModelScope.launch {
@@ -1311,9 +1392,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }.collect {
                 // Wait for initialization to complete before refreshing
                 if (_isInitialized.value) {
-                    Log.d(TAG, "Blacklist/Whitelist or scan mode changed, refreshing library & playlists")
-                    refreshLibrary(showMediaScanLoader = false)
-                    removeBlacklistedSongsFromQueue()
+                    val mode = appSettings.mediaScanMode.value
+                    val hasWhitelist = appSettings.whitelistedFolders.value.isNotEmpty() ||
+                        appSettings.whitelistedSongs.value.isNotEmpty()
+                    if (mode == MediaScanMode.WHITELIST && !hasWhitelist) {
+                        Log.d(TAG, "Whitelist mode active with no folders or songs selected; clearing current songs without full media scan")
+                        _songs.value = emptyList()
+                        _albums.value = emptyList()
+                        _artists.value = emptyList()
+                    } else {
+                        Log.d(TAG, "Blacklist/Whitelist or scan mode changed, refreshing library & playlists")
+                        refreshLibrary(showMediaScanLoader = false)
+                        removeBlacklistedSongsFromQueue()
+                    }
                 }
             }
         }
@@ -2641,10 +2732,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
         
                 val currentSongsMap = currentSongs.associateBy { it.id }
-                val currentSongsByStableKey = currentSongs.associateBy { playlistSongStableKey(it) }
-                val currentSongsByStableKeyMed = currentSongs.associateBy { playlistSongStableKeyMed(it) }
-                val currentSongsByStableKeyLight = currentSongs.associateBy { playlistSongStableKeyLight(it) }
-                val currentSongsByStableKeyBasic = currentSongs.associateBy { playlistSongStableKeyBasic(it) }
+                val currentSongsByStableKey = lazy(LazyThreadSafetyMode.NONE) { currentSongs.associateBy { playlistSongStableKey(it) } }
+                val currentSongsByStableKeyMed = lazy(LazyThreadSafetyMode.NONE) { currentSongs.associateBy { playlistSongStableKeyMed(it) } }
+                val currentSongsByStableKeyLight = lazy(LazyThreadSafetyMode.NONE) { currentSongs.associateBy { playlistSongStableKeyLight(it) } }
+                val currentSongsByStableKeyBasic = lazy(LazyThreadSafetyMode.NONE) { currentSongs.associateBy { playlistSongStableKeyBasic(it) } }
         
                 val filteredSongsValue = filteredSongs.value
                 val filteredSongsSet: Set<String> = if (filteredSongsValue.isEmpty()) {
@@ -2758,20 +2849,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun resolveSongByStableKeys(
         song: Song,
-        fullMap: Map<String, Song>,
-        medMap: Map<String, Song>,
-        lightMap: Map<String, Song>,
-        basicMap: Map<String, Song>
+        fullMap: Lazy<Map<String, Song>>,
+        medMap: Lazy<Map<String, Song>>,
+        lightMap: Lazy<Map<String, Song>>,
+        basicMap: Lazy<Map<String, Song>>
     ): Song? {
         val title = song.title.trim()
         val artist = song.artist.trim()
         if (title.isEmpty()) return null
         
-        return fullMap[playlistSongStableKey(song)]
-            ?: medMap[playlistSongStableKeyMed(song)]
-            ?: lightMap[playlistSongStableKeyLight(song)]
+        return fullMap.value[playlistSongStableKey(song)]
+            ?: medMap.value[playlistSongStableKeyMed(song)]
+            ?: lightMap.value[playlistSongStableKeyLight(song)]
             ?: if (artist.isNotEmpty() && artist.lowercase() != "unknown artist") {
-                basicMap[playlistSongStableKeyBasic(song)]
+                basicMap.value[playlistSongStableKeyBasic(song)]
             } else null
     }
     
@@ -3160,6 +3251,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 Log.w(TAG, "ensurePlaylistsSaved skipped because playlists are not loaded")
                 return
             }
+            savePlaylistsJob?.cancel()
             runBlocking(Dispatchers.IO) {
                 savePlaylistsToRoom(_playlists.value)
             }
@@ -3206,10 +3298,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 
                 val playlists = if (dbPlaylists.isNotEmpty()) {
                     val songMap = _songs.value.associateBy { it.id }
-                    val songStableKeyMap = _songs.value.associateBy { playlistSongStableKey(it) }
-                    val songStableKeyMedMap = _songs.value.associateBy { playlistSongStableKeyMed(it) }
-                    val songStableKeyLightMap = _songs.value.associateBy { playlistSongStableKeyLight(it) }
-                    val songStableKeyBasicMap = _songs.value.associateBy { playlistSongStableKeyBasic(it) }
+                    val songStableKeyMap = lazy(LazyThreadSafetyMode.NONE) { _songs.value.associateBy { playlistSongStableKey(it) } }
+                    val songStableKeyMedMap = lazy(LazyThreadSafetyMode.NONE) { _songs.value.associateBy { playlistSongStableKeyMed(it) } }
+                    val songStableKeyLightMap = lazy(LazyThreadSafetyMode.NONE) { _songs.value.associateBy { playlistSongStableKeyLight(it) } }
+                    val songStableKeyBasicMap = lazy(LazyThreadSafetyMode.NONE) { _songs.value.associateBy { playlistSongStableKeyBasic(it) } }
                     dbPlaylists.map { entity ->
                         val songIds = playlistDao.getSongIdsForPlaylist(entity.id)
                         val playlistSongs = songIds.map { songId ->
@@ -3497,10 +3589,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var savePlaylistsJob: Job? = null
+
     private fun savePlaylists() {
-        val currentPlaylists = _playlists.value
-        viewModelScope.launch(Dispatchers.IO) {
-            savePlaylistsToRoom(currentPlaylists)
+        savePlaylistsJob?.cancel()
+        savePlaylistsJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(200) // Debounce rapid consecutive mutations
+            savePlaylistsToRoom(_playlists.value)
         }
     }
 
@@ -3540,16 +3635,26 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         )
                         playlistDao.insertPlaylist(entity)
                         
-                        val songEntities = playlist.songs.mapIndexed { index, song ->
-                            PlaylistSongEntity(
-                                playlistId = playlist.id,
-                                songId = song.id,
-                                orderIndex = index
-                            )
+                        playlistDao.deleteSongsFromPlaylist(playlist.id)
+                        if (playlist.songs.isNotEmpty()) {
+                            val songEntities = playlist.songs.mapIndexed { index, song ->
+                                PlaylistSongEntity(
+                                    playlistId = playlist.id,
+                                    songId = song.id,
+                                    orderIndex = index
+                                )
+                            }
+                            songEntities.chunked(500).forEach { chunk ->
+                                playlistDao.insertPlaylistSongs(chunk)
+                            }
                         }
-                        playlistDao.updatePlaylistSongs(playlist.id, songEntities)
+                    }
 
-                        val dbSongEntities = playlist.songs.map { song ->
+                    // Persist distinct songs across all playlists in chunks to avoid redundant allocations
+                    val distinctDbSongEntities = currentPlaylists.asSequence()
+                        .flatMap { it.songs.asSequence() }
+                        .distinctBy { it.id }
+                        .map { song ->
                             chromahub.rhythm.app.features.local.data.database.entity.SongEntity(
                                 id = song.id,
                                 title = song.title,
@@ -3573,8 +3678,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                                 path = song.path
                             )
                         }
-                        if (dbSongEntities.isNotEmpty()) {
-                            repository.songDao.upsertAll(dbSongEntities)
+                        .toList()
+
+                    if (distinctDbSongEntities.isNotEmpty()) {
+                        distinctDbSongEntities.chunked(500).forEach { chunk ->
+                            repository.songDao.upsertAll(chunk)
                         }
                     }
                 }
@@ -4055,7 +4163,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
             Log.e(TAG, "Player error encountered in ViewModel: ${error.message}", error)
-            if (appSettings.trackErrorCheckerEnabled.value) {
+            // Streaming tracks are handled by the recovery controller (published
+            // via PlaybackErrorCenter only after retries are exhausted). Avoid
+            // showing the raw dialog immediately for those; the detailed failure
+            // replaces it when it arrives.
+            val mediaId = mediaController?.currentMediaItem?.mediaId ?: ""
+            val isStreaming = StreamingRecoveryPolicy.isStreamingMediaId(mediaId)
+            if (!isStreaming && appSettings.trackErrorCheckerEnabled.value) {
                 _corruptedTrackName.value = _currentSong.value?.title ?: "Unknown Song"
                 _corruptedTrackMessage.value = "The player encountered a playback error: ${error.message ?: "Unknown error"}"
                 _showCorruptionDialog.value = true
@@ -4287,6 +4401,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             Log.d(TAG, "Repeat mode changed: $repeatMode")
             _repeatMode.value = repeatMode
         }
+
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            if (appSettings.shuffleUsesExoplayer.value && mediaController?.shuffleModeEnabled == true) {
+                syncQueueWithMediaController()
+            }
+        }
     }
     
     private fun startProgressUpdates() {
@@ -4336,6 +4456,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // Avoid spamming the server with the same position (e.g. paused at 0)
         if (lastReportedStreamingPositionMs == positionMs && lastReportedStreamingPaused == isPaused) return
 
+        // Keep the audiobook "Continue listening" card in sync with the chapter
+        // actually being played (progress advances by chapter, so the session
+        // must follow onMediaItemTransition too — this runs every 10s).
+        updateBookSessionForCurrentStream(song, positionMs)
+
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val repository = chromahub.rhythm.app.features.streaming.di.StreamingMusicModule.provideStreamingMusicRepository(getApplication())
@@ -4345,6 +4470,36 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to report streaming progress for song: $songId", e)
             }
+        }
+    }
+
+    /**
+     * Persist the currently playing audiobook chapter into
+     * [chromahub.rhythm.app.features.streaming.data.store.BookSessionStore] so
+     * "Continue listening" survives app restarts and follows the real chapter
+     * (not just the chapter the book was started from).
+     */
+    private fun updateBookSessionForCurrentStream(song: Song, positionMs: Long) {
+        try {
+            val albumId = song.albumId.takeIf { it.isNotBlank() } ?: return
+            if (!song.isAudiobook) return
+
+            val sessionStore = chromahub.rhythm.app.features.streaming.data.store.BookSessionStore(getApplication())
+            val index = _currentQueue.value.songs.indexOfFirst { it.id == song.id }
+            sessionStore.saveSession(
+                chromahub.rhythm.app.features.streaming.data.store.BookSessionStore.BookSession(
+                    bookId = albumId,
+                    title = song.album.ifBlank { song.title },
+                    author = song.albumArtist ?: song.artist,
+                    artworkUrl = song.artworkUri?.toString(),
+                    chapterId = song.id,
+                    chapterIndex = index.coerceAtLeast(0),
+                    positionMs = positionMs,
+                    isAudiobook = true
+                )
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update book session for ${song.id}", e)
         }
     }
     
@@ -4934,18 +5089,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
         mediaController?.let { controller ->
             if (shouldClearQueue) {
+                val keepShuffle = appSettings.keepShuffleOnSelection.value && _isShuffleEnabled.value
                 // Clear queue setting enabled - start fresh
                 if (shouldAutoAddToQueue) {
                     val contextualQueue = createContextualQueue(song)
                     if (contextualQueue.size > 1) {
                         Log.d(TAG, "Clearing queue and creating contextual queue with ${contextualQueue.size} songs (clearQueueOnNewSong=true, autoAddToQueue=true)")
-                        playQueue(contextualQueue)
+                        playQueue(
+                            contextualQueue,
+                            enableShuffle = keepShuffle,
+                            startIndex = 0,
+                            pinStartIndex = keepShuffle
+                        )
                         return
                     }
                 }
 
                 Log.d(TAG, "Clearing queue and playing single song (clearQueueOnNewSong=true, autoAddToQueue=$shouldAutoAddToQueue)")
-                playQueue(listOf(song))
+                playQueue(
+                    listOf(song),
+                    enableShuffle = keepShuffle,
+                    startIndex = 0,
+                    pinStartIndex = keepShuffle
+                )
                 return
             }
             
@@ -5047,24 +5213,31 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val pref = appSettings.contextQueuePreference.value
         val maxSize = appSettings.contextQueueSize.value.coerceAtLeast(1)
 
-        // If the song appears in recently played, prefer that short recent list
-        if (_recentlyPlayed.value.any { it.id == song.id }) {
+        fun recentlyPlayedQueueOrNull(): List<Song>? {
+            if (!_recentlyPlayed.value.any { it.id == song.id }) return null
+            val startIndex = _recentlyPlayed.value.indexOfFirst { it.id == song.id }
+            if (startIndex == -1) return null
             val recentlyPlayedSongs = _recentlyPlayed.value.take(20)
-            val startIndex = recentlyPlayedSongs.indexOfFirst { it.id == song.id }
-            if (startIndex != -1) {
-                val reordered = listOf(song) + recentlyPlayedSongs.filter { it.id != song.id }
-                Log.d(TAG, "Created queue from recently played with ${reordered.size} songs")
-                return reordered.take(maxSize)
-            }
+            val reordered = listOf(song) + recentlyPlayedSongs.filter { it.id != song.id }
+            Log.d(TAG, "Created queue from recently played with ${reordered.size} songs")
+            return reordered.take(maxSize)
         }
 
-        // Album context (preserve natural ordering)
-        val albumSongs = _songs.value.filter { it.album == song.album && it.artist == song.artist }
-        if (albumSongs.size > 1) {
+        fun albumQueueOrNull(): List<Song>? {
+            val albumSongs = _songs.value.filter { it.album == song.album && it.artist == song.artist }
+            if (albumSongs.size <= 1) return null
             val sortedAlbumSongs = albumSongs.sortedWith { a, b -> compareByDiscThenTrack(a, b) }
             val reordered = listOf(song) + sortedAlbumSongs.filter { it.id != song.id }
             Log.d(TAG, "Created queue from album '${song.album}' with ${reordered.size} songs")
             return reordered.take(maxSize)
+        }
+
+        if (appSettings.respectAlbumOnPlay.value) {
+            albumQueueOrNull()?.let { return it }
+            recentlyPlayedQueueOrNull()?.let { return it }
+        } else {
+            recentlyPlayedQueueOrNull()?.let { return it }
+            albumQueueOrNull()?.let { return it }
         }
 
         // Gather candidate pools
@@ -5197,16 +5370,27 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun playSongFromSearch(song: Song, searchContextSongs: List<Song>) {
         val contextSongs = if (searchContextSongs.isNotEmpty()) searchContextSongs else _songs.value
         val startIndex = contextSongs.indexOfFirst { it.id == song.id }
+        val keepShuffle = appSettings.keepShuffleOnSelection.value && _isShuffleEnabled.value
 
         Log.d(
             TAG,
-            "Playing song from search with shuffle disabled: ${song.title}, contextSize=${contextSongs.size}, startIndex=$startIndex"
+            "Playing song from search with keepShuffle=$keepShuffle: ${song.title}, contextSize=${contextSongs.size}, startIndex=$startIndex"
         )
 
         if (startIndex >= 0) {
-            playQueue(contextSongs, enableShuffle = false, startIndex = startIndex)
+            playQueue(
+                songs = contextSongs,
+                enableShuffle = keepShuffle,
+                startIndex = startIndex,
+                pinStartIndex = keepShuffle
+            )
         } else {
-            playQueue(listOf(song), enableShuffle = false)
+            playQueue(
+                songs = listOf(song),
+                enableShuffle = keepShuffle,
+                startIndex = 0,
+                pinStartIndex = keepShuffle
+            )
         }
     }
 
@@ -5395,8 +5579,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun updateRecentlyPlayed(song: Song) {
-        viewModelScope.launch {
+    private fun updateRecentlyPlayed(song: Song) {        viewModelScope.launch {
             try {
                 val currentList = _recentlyPlayed.value.toMutableList()
                 currentList.removeIf { it.id == song.id }
@@ -5501,7 +5684,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 
                 // Update weekly top artists
                 val currentArtists = appSettings.weeklyTopArtists.value.toMutableMap()
-                currentArtists[song.artist] = (currentArtists[song.artist] ?: 0) + 1
+                val splitArtists = repository.splitArtistNames(song.artist).ifEmpty { listOf(song.artist.trim()) }
+                splitArtists.forEach { artistName ->
+                    if (artistName.isNotBlank() && !artistName.equals("<unknown>", ignoreCase = true)) {
+                        currentArtists[artistName] = (currentArtists[artistName] ?: 0) + 1
+                    }
+                }
                 appSettings.updateWeeklyTopArtists(currentArtists)
                 
                 // Update favorite genres
@@ -5598,9 +5786,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val hasExistingQueue = _currentQueue.value.songs.isNotEmpty() &&
             (mediaController?.mediaItemCount ?: 0) > 0
         val queueRule = appSettings.listQueueActionBehavior.value
+        val keepShuffle = appSettings.keepShuffleOnSelection.value && _isShuffleEnabled.value
 
         if (!hasExistingQueue || queueRule == "replace") {
-            playQueue(songs, enableShuffle = false, startIndex = startIndex)
+            playQueue(
+                songs = songs,
+                enableShuffle = keepShuffle,
+                startIndex = startIndex,
+                pinStartIndex = keepShuffle
+            )
             return
         }
 
@@ -5617,13 +5811,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun applyListQueueAction(songs: List<Song>, startIndex: Int, action: String) {
+        val keepShuffle = appSettings.keepShuffleOnSelection.value && _isShuffleEnabled.value
         when (action) {
-            "replace" -> playQueue(songs, enableShuffle = false, startIndex = startIndex)
+            "replace" -> playQueue(
+                songs = songs,
+                enableShuffle = keepShuffle,
+                startIndex = startIndex,
+                pinStartIndex = keepShuffle
+            )
             "play_next" -> insertQueueListAndPlay(songs, startIndex, insertAfterCurrent = true)
             "add_to_end" -> insertQueueListAndPlay(songs, startIndex, insertAfterCurrent = false)
             else -> {
                 Log.w(TAG, "Unknown list queue action '$action', falling back to replace")
-                playQueue(songs, enableShuffle = false, startIndex = startIndex)
+                playQueue(
+                    songs = songs,
+                    enableShuffle = keepShuffle,
+                    startIndex = startIndex,
+                    pinStartIndex = keepShuffle
+                )
             }
         }
     }
@@ -5734,13 +5939,25 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         }
                     } ?: run {
-                        playQueue(songs, enableShuffle = false, startIndex = validStartIndex)
+                        val keepShuffle = appSettings.keepShuffleOnSelection.value && _isShuffleEnabled.value
+                        playQueue(
+                            songs = songs,
+                            enableShuffle = keepShuffle,
+                            startIndex = validStartIndex,
+                            pinStartIndex = keepShuffle
+                        )
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error inserting queue list with action", e)
                 withContext(Dispatchers.Main) {
-                    playQueue(songs, enableShuffle = false, startIndex = validStartIndex)
+                    val keepShuffle = appSettings.keepShuffleOnSelection.value && _isShuffleEnabled.value
+                    playQueue(
+                        songs = songs,
+                        enableShuffle = keepShuffle,
+                        startIndex = validStartIndex,
+                        pinStartIndex = keepShuffle
+                    )
                 }
             }
         }
@@ -5752,6 +5969,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         if (!canStartPlayback("playQueue")) {
             return
         }
+
+        // Book mode: audiobook queues are always sequential (no shuffle).
+        val isAudiobookQueue = songs.any { it.isAudiobook }
+        _isAudiobookQueue.value = isAudiobookQueue
+        val effectiveShuffle = if (isAudiobookQueue) false else enableShuffle
         
         // Clear current lyrics to prevent showing stale lyrics from previous song
         _currentLyrics.value = null
@@ -5771,8 +5993,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.Default) {
             try {
                 val useExoPlayerShuffle = appSettings.shuffleUsesExoplayer.value
-                val isManualShuffle = enableShuffle == true && !useExoPlayerShuffle
-                val shouldPinStart = pinStartIndex || (enableShuffle == true && validStartIndex > 0)
+                val isManualShuffle = effectiveShuffle == true && !useExoPlayerShuffle
+                val shouldPinStart = pinStartIndex || (effectiveShuffle == true && validStartIndex > 0)
 
                 // If manual shuffle is requested, pre-shuffle the list
                 val finalSongs = if (isManualShuffle) {
@@ -5798,7 +6020,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 // If ExoPlayer shuffle is used without a pinned starting song, pick a random start index so ExoPlayer's shuffle order doesn't always start on song 0.
                 val finalStartIndex = when {
                     isManualShuffle -> 0
-                    enableShuffle == true && !shouldPinStart && songs.size > 1 -> kotlin.random.Random.nextInt(songs.size)
+                    effectiveShuffle == true && !shouldPinStart && songs.size > 1 -> kotlin.random.Random.nextInt(songs.size)
                     else -> validStartIndex
                 }
 
@@ -5816,17 +6038,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         
                         // Set shuffle mode BEFORE adding items if specified
                         if (enableShuffle != null) {
+                            val resolvedShuffle = effectiveShuffle ?: false
                             if (useExoPlayerShuffle) {
-                                controller.shuffleModeEnabled = enableShuffle
-                                _isShuffleEnabled.value = enableShuffle
+                                controller.shuffleModeEnabled = resolvedShuffle
+                                _isShuffleEnabled.value = resolvedShuffle
                             } else {
                                 controller.shuffleModeEnabled = false
-                                _isShuffleEnabled.value = enableShuffle
+                                _isShuffleEnabled.value = resolvedShuffle
                                 if (appSettings.shuffleModePersistence.value) {
-                                    appSettings.setSavedShuffleState(enableShuffle)
+                                    appSettings.setSavedShuffleState(resolvedShuffle)
                                 }
                             }
-                            Log.d(TAG, "Set shuffle mode to $enableShuffle before building queue (useExoPlayerShuffle=$useExoPlayerShuffle)")
+                            Log.d(TAG, "Set shuffle mode to $resolvedShuffle before building queue (useExoPlayerShuffle=$useExoPlayerShuffle)")
                         }
                         
                         // Add all media items at once
@@ -5839,12 +6062,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         _currentQueue.value = Queue(finalSongs, finalStartIndex)
                         
                         // Set original queue state if shuffle is enabled
-                        if (enableShuffle == true) {
+                        if (effectiveShuffle == true) {
                             queueStateHolder.saveOriginalQueueState(songs, queueStateHolder.currentQueueSourceName.value)
                         } else {
                             queueStateHolder.clearOriginalQueue()
                         }
-                        
+
                         // Save queue to persistence
                         saveQueueToPersistence()
                         
@@ -6238,6 +6461,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             // Don't allow shuffle toggle if queue is empty
             if (_currentQueue.value.songs.isEmpty()) {
                 Log.w(TAG, "Cannot toggle shuffle - queue is empty")
+                return@executeCommand
+            }
+
+            // Audiobook (book mode) playback is strictly sequential: no shuffle.
+            if (_isAudiobookQueue.value || _currentQueue.value.songs.any { it.isAudiobook }) {
+                Log.w(TAG, "Shuffle is disabled for audiobook queues")
                 return@executeCommand
             }
 
@@ -7927,10 +8156,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             val parsedWordByWordLines = RhythmLyricsParser.parseWordByWordLyrics(wordByWordJson)
                             val lrc = RhythmLyricsParser.toLRCFormat(parsedWordByWordLines)
                             val plain = RhythmLyricsParser.toPlainText(parsedWordByWordLines)
+                            val hasWordTiming = RhythmLyricsParser.hasWordTiming(parsedWordByWordLines)
                             LyricsData(
                                 plainLyrics = plain,
                                 syncedLyrics = lrc,
-                                wordByWordLyrics = wordByWordJson,
+                                wordByWordLyrics = if (hasWordTiming) wordByWordJson else null,
                                 source = "Local File",
                                 isCorrected = true
                             )
@@ -7971,16 +8201,47 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             wordByWordLyrics = sanitizedLyrics
                         )
                     } else if (isSynced) {
-                        // Generate plain text by removing LRC timestamps
-                        val generatedPlain = normalizedLyrics.lines().joinToString("\n") { line ->
-                            line.replace(Regex("\\[\\d{2}:\\d{2}\\.\\d{2,3}]"), "").trim()
+                        val hasWordTimestamps = chromahub.rhythm.app.util.LyricsParser.hasWordTimestamps(sanitizedLyrics)
+                        if (hasWordTimestamps) {
+                            val parsedWordByWordLines = try {
+                                RhythmLyricsParser.parseEnhancedLRCtoWordByWord(sanitizedLyrics)
+                            } catch (e: Exception) {
+                                emptyList()
+                            }
+                            if (parsedWordByWordLines.isNotEmpty()) {
+                                val wordByWordJson = Gson().toJson(parsedWordByWordLines)
+                                val lrc = RhythmLyricsParser.toLRCFormat(parsedWordByWordLines)
+                                val plain = RhythmLyricsParser.toPlainText(parsedWordByWordLines)
+                                val hasWordTiming = RhythmLyricsParser.hasWordTiming(parsedWordByWordLines)
+                                LyricsData(
+                                    plainLyrics = plain,
+                                    syncedLyrics = lrc,
+                                    wordByWordLyrics = if (hasWordTiming) wordByWordJson else null,
+                                    source = "Local File",
+                                    isCorrected = true
+                                )
+                            } else {
+                                val generatedPlain = normalizedLyrics.lines().joinToString("\n") { line ->
+                                    line.replace(Regex("\\[\\d{2}:\\d{2}\\.\\d{2,3}]"), "").trim()
+                                }
+                                LyricsData(
+                                    plainLyrics = generatedPlain,
+                                    syncedLyrics = normalizedLyrics,
+                                    wordByWordLyrics = existingLyricsData?.wordByWordLyrics
+                                )
+                            }
+                        } else {
+                            // Generate plain text by removing LRC timestamps
+                            val generatedPlain = normalizedLyrics.lines().joinToString("\n") { line ->
+                                line.replace(Regex("\\[\\d{2}:\\d{2}\\.\\d{2,3}]"), "").trim()
+                            }
+                            
+                            LyricsData(
+                                plainLyrics = generatedPlain,
+                                syncedLyrics = normalizedLyrics,
+                                wordByWordLyrics = existingLyricsData?.wordByWordLyrics
+                            )
                         }
-                        
-                        LyricsData(
-                            plainLyrics = generatedPlain,
-                            syncedLyrics = normalizedLyrics,
-                            wordByWordLyrics = existingLyricsData?.wordByWordLyrics
-                        )
                     } else {
                         LyricsData(
                             plainLyrics = sanitizedLyrics,
@@ -8312,6 +8573,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 if (controller.mediaItemCount != _currentQueue.value.songs.size) {
                     Log.w(TAG, "Queue size mismatch after playNext - MediaController: ${controller.mediaItemCount}, ViewModel: ${_currentQueue.value.songs.size}")
                 }
+                // Save queue to persistence
+                saveQueueToPersistence()
+
                 val toastContext = getApplication<android.app.Application>().applicationContext
                 android.widget.Toast.makeText(toastContext, toastContext.getString(R.string.playing_next_simple, song.title), android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
@@ -8566,9 +8830,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     // Add items in batches to prevent ANR
                     val batchSize = 50
                     mediaItems.chunked(batchSize).forEach { batch ->
-                        batch.forEach { mediaItem ->
-                            controller.addMediaItem(mediaItem)
-                        }
+                        controller.addMediaItems(batch)
                         // Small delay between batches to keep UI responsive
                         if (mediaItems.size > batchSize) {
                             kotlinx.coroutines.delay(10)

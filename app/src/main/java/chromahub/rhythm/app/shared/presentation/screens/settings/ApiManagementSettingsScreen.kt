@@ -89,7 +89,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -358,7 +357,7 @@ fun ApiManagementSettingsScreen(onBackClick: () -> Unit) {
                 )
             }
 
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+            item { Spacer(modifier = Modifier.height(16.dp)) }
 
             item {
                 Card(

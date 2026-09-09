@@ -60,6 +60,7 @@ import chromahub.rhythm.app.shared.data.repository.PlaybackStatsRepository
 import chromahub.rhythm.app.shared.data.repository.StatsTimeRange
 import chromahub.rhythm.app.shared.presentation.components.Material3SettingsGroup
 import chromahub.rhythm.app.shared.presentation.components.Material3SettingsItem
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveCookieEmptyState
 import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveShapeTarget
 import chromahub.rhythm.app.shared.presentation.components.common.CollapsibleHeaderScreen
 import chromahub.rhythm.app.shared.presentation.components.common.TabAnimation
@@ -1077,30 +1078,18 @@ private fun BeatTimelineCard(timeline: List<PlaybackStatsRepository.TimelineEntr
 
 @Composable
 private fun EmptyStatsView() {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Icon(
-            imageVector = RhythmIcons.BarChart,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-        )
-        Text(
-            text = stringResource(R.string.rhythmstatsscreen_no_stats_available_yet),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = stringResource(R.string.rhythmstatsscreen_keep_listening_to_build),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-    }
+    ExpressiveCookieEmptyState(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 48.dp),
+        title = stringResource(R.string.rhythmstatsscreen_no_stats_available_yet),
+        subtitle = stringResource(R.string.rhythmstatsscreen_keep_listening_to_build),
+        mainIcon = RhythmIcons.BarChart,
+        accentIcon = RhythmIcons.TrendingUp,
+        cornerIcon = RhythmIcons.MusicNote,
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    )
 }
 
 private fun formatDuration(ms: Long, useHoursFormat: Boolean): String {

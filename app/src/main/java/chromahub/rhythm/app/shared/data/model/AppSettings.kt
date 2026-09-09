@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import chromahub.rhythm.app.util.GsonUtils
+import chromahub.rhythm.app.util.ArtistSeparator
 import chromahub.rhythm.app.worker.BackupWorker
 import chromahub.rhythm.app.worker.RhythmPulseNotificationWorker
 import chromahub.rhythm.app.worker.UpdateNotificationWorker
@@ -200,6 +201,10 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_PLAYER_CHIP_ORDER = "player_chip_order"
         private const val KEY_HIDDEN_LIBRARY_TABS = "hidden_library_tabs"
         private const val KEY_HIDDEN_PLAYER_CHIPS = "hidden_player_chips"
+        private const val KEY_EXPRESSIVE_BOTTOM_BUTTONS_NORMAL = "expressive_bottom_buttons_normal"
+        private const val KEY_EXPRESSIVE_HIDDEN_BOTTOM_BUTTONS_NORMAL = "expressive_hidden_bottom_buttons_normal"
+        private const val KEY_EXPRESSIVE_BOTTOM_BUTTONS_MERGE = "expressive_bottom_buttons_merge"
+        private const val KEY_EXPRESSIVE_HIDDEN_BOTTOM_BUTTONS_MERGE = "expressive_hidden_bottom_buttons_merge"
         private const val KEY_LYRICALLY_SOURCES_ORDER = "lyrically_sources_order"
         private const val KEY_DISABLED_LYRICALLY_SOURCES = "disabled_lyrically_sources"
         private const val KEY_GROUP_BY_ALBUM_ARTIST = "group_by_album_artist" // New setting for album artist grouping
@@ -242,6 +247,7 @@ class AppSettings private constructor(context: Context) {
         // Playlists
         private const val KEY_PLAYLISTS = "playlists"
         private const val KEY_FAVORITE_SONGS = "favorite_songs"
+        private const val KEY_AUDIOBOOK_ALBUMS = "audiobook_albums" // albumIds the user marked as audiobooks (book mode)
         private const val KEY_DEFAULT_PLAYLISTS_ENABLED = "default_playlists_enabled"
         
         // User Statistics
@@ -336,7 +342,6 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_UPDATES_ENABLED = "updates_enabled" // Master switch for updates
         private const val KEY_UPDATE_NOTIFICATIONS_ENABLED = "update_notifications_enabled" // Push-style notifications
         private const val KEY_UPDATE_STATUS_NOTIFICATIONS_ENABLED = "update_status_notifications_enabled" // Notify for no-update/error states
-        private const val KEY_USE_SMART_UPDATE_POLLING = "use_smart_update_polling" // Use ETag/conditional requests
         private const val KEY_MEDIA_SCAN_MODE = "media_scan_mode" // Mode for media scanning: "blacklist" or "whitelist"
         private const val KEY_INCLUDE_HIDDEN_WHITELISTED_MEDIA = "include_hidden_whitelisted_media"
         private const val KEY_UPDATE_CHECK_INTERVAL_HOURS = "update_check_interval_hours" // Configurable interval
@@ -407,7 +412,6 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_PINNED_FOLDERS = "pinned_folders"
         
         // Playlist Playback Behavior
-        private const val KEY_PLAYLIST_CLICK_BEHAVIOR = "playlist_click_behavior" // "ask", "play_all", "play_one"
         
         // Backup and Restore
         private const val KEY_LAST_BACKUP_TIMESTAMP = "last_backup_timestamp"
@@ -448,6 +452,7 @@ class AppSettings private constructor(context: Context) {
         // Queue & Playback Behavior
         private const val KEY_SHUFFLE_USES_EXOPLAYER = "shuffle_uses_exoplayer"
         private const val KEY_AUTO_ADD_TO_QUEUE = "auto_add_to_queue"
+        private const val KEY_RESPECT_ALBUM_ON_PLAY = "respect_album_on_play"
         private const val KEY_CLEAR_QUEUE_ON_NEW_SONG = "clear_queue_on_new_song"
         private const val KEY_CONTEXT_QUEUE_PREFERENCE = "context_queue_preference" // ARTIST_FIRST | GENRE_FIRST | ARTIST_THEN_GENRE
         private const val KEY_CONTEXT_QUEUE_PERSISTENCE = "context_queue_persistence" // EPHEMERAL | PERSISTENT
@@ -457,6 +462,7 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_LIST_QUEUE_ACTION_BEHAVIOR = "list_queue_action_behavior" // "replace", "ask", "play_next", "add_to_end"
         private const val KEY_REPEAT_MODE_PERSISTENCE = "repeat_mode_persistence"
         private const val KEY_SHUFFLE_MODE_PERSISTENCE = "shuffle_mode_persistence"
+        private const val KEY_KEEP_SHUFFLE_ON_SELECTION = "keep_shuffle_on_selection"
         private const val KEY_SAVED_SHUFFLE_STATE = "saved_shuffle_state"
         private const val KEY_SAVED_REPEAT_MODE = "saved_repeat_mode"
         private const val KEY_PLAYBACK_SPEED = "playback_speed"
@@ -549,8 +555,10 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_ALBUM_HIDE_ABOUT = "album_hide_about"
         
         // Artist Separator Settings
+        const val DEFAULT_ARTIST_SEPARATOR_DELIMITERS = ";/"
         private const val KEY_ARTIST_SEPARATOR_ENABLED = "artist_separator_enabled"
-        private const val KEY_ARTIST_SEPARATOR_DELIMITERS = "artist_separator_delimiters" // Comma-separated string of delimiters
+        private const val KEY_ARTIST_SEPARATOR_DELIMITERS = "artist_separator_delimiters" // Delimiter string or JSON array
+        private const val KEY_ARTIST_SEPARATOR_CUSTOM_DELIMITERS = "artist_separator_custom_delimiters"
         private const val KEY_ARTIST_SEPARATOR_CACHE_SIGNATURE = "artist_separator_cache_signature"
         
         // Player Screen Customization Settings
@@ -596,6 +604,12 @@ class AppSettings private constructor(context: Context) {
         private const val KEY_GESTURE_PLAYER_SWIPE_DISMISS = "gesture_player_swipe_dismiss" // Swipe down to dismiss full player
         private const val KEY_GESTURE_PLAYER_SWIPE_TRACKS = "gesture_player_swipe_tracks" // Swipe left/right to change tracks in full player
         private const val KEY_GESTURE_ARTWORK_DOUBLE_TAP = "gesture_artwork_double_tap" // Double tap on artwork to play/pause
+        private const val KEY_GESTURE_ARTWORK_SINGLE_TAP = "gesture_artwork_single_tap" // Tap artwork to toggle lyrics
+        private const val KEY_GESTURE_QUEUE_SWIPE_TO_REMOVE = "gesture_queue_swipe_to_remove" // Swipe to remove from queue
+        private const val KEY_GESTURE_LIBRARY_SWIPE_TABS = "gesture_library_swipe_tabs" // Swipe between library tabs
+        private const val KEY_MINIPLAYER_SWIPE_TRACKS = "miniplayer_swipe_tracks" // Swipe horizontally on miniplayer to change tracks
+        private const val KEY_MINIPLAYER_SWIPE_DISMISS = "miniplayer_swipe_dismiss" // Swipe vertically on miniplayer to open/dismiss
+        private const val KEY_TAP_LYRICS_TO_SEEK = "tap_lyrics_to_seek" // Tap lyric line to seek playback
         
         // Expressive MaterialShapes Settings (M3 Expressive API)
         private const val KEY_EXPRESSIVE_SHAPES_ENABLED = "expressive_shapes_enabled" // Master toggle for expressive shapes
@@ -784,11 +798,18 @@ class AppSettings private constructor(context: Context) {
     private val _artistSeparatorEnabled = MutableStateFlow(prefs.getBoolean(KEY_ARTIST_SEPARATOR_ENABLED, true))
     val artistSeparatorEnabled: StateFlow<Boolean> = _artistSeparatorEnabled.asStateFlow()
     
-    // Default delimiters: / ; , + &
+    // Default delimiters: ; /
     private val _artistSeparatorDelimiters = MutableStateFlow(
-        prefs.getString(KEY_ARTIST_SEPARATOR_DELIMITERS, "/;,+&") ?: "/;,+&"
+        prefs.getString(KEY_ARTIST_SEPARATOR_DELIMITERS, DEFAULT_ARTIST_SEPARATOR_DELIMITERS) ?: DEFAULT_ARTIST_SEPARATOR_DELIMITERS
     )
     val artistSeparatorDelimiters: StateFlow<String> = _artistSeparatorDelimiters.asStateFlow()
+
+    private val _artistSeparatorCustomDelimiters = MutableStateFlow<List<String>>(
+        prefs.getString(KEY_ARTIST_SEPARATOR_CUSTOM_DELIMITERS, null)?.let {
+            ArtistSeparator.parseDelimiters(it)
+        } ?: emptyList()
+    )
+    val artistSeparatorCustomDelimiters: StateFlow<List<String>> = _artistSeparatorCustomDelimiters.asStateFlow()
     
     private val _customColorScheme = MutableStateFlow(prefs.getString(KEY_CUSTOM_COLOR_SCHEME, "Default") ?: "Default")
     val customColorScheme: StateFlow<String> = _customColorScheme.asStateFlow()
@@ -928,6 +949,66 @@ class AppSettings private constructor(context: Context) {
             ?: emptySet()
     )
     val hiddenPlayerChips: StateFlow<Set<String>> = _hiddenPlayerChips.asStateFlow()
+
+    // Expressive Player Bottom Buttons
+    val defaultExpressiveBottomButtonsNormal = listOf("DEVICE", "QUEUE", "MORE")
+    val defaultExpressiveBottomButtonsMerge = listOf("LYRICS", "FAVORITE", "DEVICE", "QUEUE", "MORE")
+    val allExpressiveBottomButtons = listOf(
+        "LYRICS", "FAVORITE", "DEVICE", "QUEUE", "MORE",
+        "SHUFFLE", "REPEAT", "EQUALIZER", "SPEED", "SLEEP_TIMER",
+        "ADD_TO_PLAYLIST", "ALBUM", "ARTIST", "SONG_INFO", "SHARE"
+    )
+
+    private val _expressiveBottomButtonsNormal = MutableStateFlow(
+        prefs.getString(KEY_EXPRESSIVE_BOTTOM_BUTTONS_NORMAL, null)
+            ?.split(",")
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?.filter { it in allExpressiveBottomButtons }
+            ?.takeIf { it.isNotEmpty() }
+            ?: defaultExpressiveBottomButtonsNormal
+    )
+    val expressiveBottomButtonsNormal: StateFlow<List<String>> = _expressiveBottomButtonsNormal.asStateFlow()
+
+    private val _expressiveHiddenBottomButtonsNormal = MutableStateFlow(
+        prefs.getString(KEY_EXPRESSIVE_HIDDEN_BOTTOM_BUTTONS_NORMAL, null)
+            ?.split(",")
+            ?.filter { it.isNotBlank() }
+            ?.filter { it in allExpressiveBottomButtons }
+            ?.toSet()
+            ?: emptySet()
+    )
+    val expressiveHiddenBottomButtonsNormal: StateFlow<Set<String>> = _expressiveHiddenBottomButtonsNormal.asStateFlow()
+
+    private val _expressiveBottomButtonsMerge = MutableStateFlow(
+        prefs.getString(KEY_EXPRESSIVE_BOTTOM_BUTTONS_MERGE, null)
+            ?.split(",")
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?.filter { it in allExpressiveBottomButtons }
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { savedList ->
+                val result = savedList.toMutableList()
+                defaultExpressiveBottomButtonsMerge.forEachIndexed { defaultIndex, button ->
+                    if (!result.contains(button)) {
+                        result.add(defaultIndex.coerceAtMost(result.size), button)
+                    }
+                }
+                result
+            }
+            ?: defaultExpressiveBottomButtonsMerge
+    )
+    val expressiveBottomButtonsMerge: StateFlow<List<String>> = _expressiveBottomButtonsMerge.asStateFlow()
+
+    private val _expressiveHiddenBottomButtonsMerge = MutableStateFlow(
+        prefs.getString(KEY_EXPRESSIVE_HIDDEN_BOTTOM_BUTTONS_MERGE, null)
+            ?.split(",")
+            ?.filter { it.isNotBlank() }
+            ?.filter { it in allExpressiveBottomButtons }
+            ?.toSet()
+            ?: emptySet()
+    )
+    val expressiveHiddenBottomButtonsMerge: StateFlow<Set<String>> = _expressiveHiddenBottomButtonsMerge.asStateFlow()
     
     // Lyrically Sources Order
     val defaultLyricallySources = listOf(
@@ -1093,6 +1174,8 @@ class AppSettings private constructor(context: Context) {
     
     private val _autoAddToQueue = MutableStateFlow(prefs.getBoolean(KEY_AUTO_ADD_TO_QUEUE, true))
     val autoAddToQueue: StateFlow<Boolean> = _autoAddToQueue.asStateFlow()
+    private val _respectAlbumOnPlay = MutableStateFlow(prefs.getBoolean(KEY_RESPECT_ALBUM_ON_PLAY, true))
+    val respectAlbumOnPlay: StateFlow<Boolean> = _respectAlbumOnPlay.asStateFlow()
     
     private val _clearQueueOnNewSong = MutableStateFlow(prefs.getBoolean(KEY_CLEAR_QUEUE_ON_NEW_SONG, false))
     val clearQueueOnNewSong: StateFlow<Boolean> = _clearQueueOnNewSong.asStateFlow()
@@ -1121,6 +1204,9 @@ class AppSettings private constructor(context: Context) {
     
     private val _shuffleModePersistence = MutableStateFlow(prefs.getBoolean(KEY_SHUFFLE_MODE_PERSISTENCE, true))
     val shuffleModePersistence: StateFlow<Boolean> = _shuffleModePersistence.asStateFlow()
+    
+    private val _keepShuffleOnSelection = MutableStateFlow(prefs.getBoolean(KEY_KEEP_SHUFFLE_ON_SELECTION, false))
+    val keepShuffleOnSelection: StateFlow<Boolean> = _keepShuffleOnSelection.asStateFlow()
     
     private val _savedShuffleState = MutableStateFlow(prefs.getBoolean(KEY_SAVED_SHUFFLE_STATE, false))
     val savedShuffleState: StateFlow<Boolean> = _savedShuffleState.asStateFlow()
@@ -1210,6 +1296,13 @@ class AppSettings private constructor(context: Context) {
 
     private val _favoriteSongs = MutableStateFlow<String?>(prefs.getString(KEY_FAVORITE_SONGS, null))
     val favoriteSongs: StateFlow<String?> = _favoriteSongs.asStateFlow()
+
+    // Audiobook albums: albumIds the user manually marked as audiobooks (book mode).
+    // Persisted as a StringSet; exposed as a StateFlow for UI reactivity.
+    private val _audiobookAlbumIds = MutableStateFlow<Set<String>>(
+        prefs.getStringSet(KEY_AUDIOBOOK_ALBUMS, emptySet())?.toSet() ?: emptySet()
+    )
+    val audiobookAlbumIds: StateFlow<Set<String>> = _audiobookAlbumIds.asStateFlow()
     
     // Song Lyrics Preferences - Map of songId to source preference ("online", "embedded", "lrc")
     private val _songLyricsPreferences = MutableStateFlow<Map<String, String>>(
@@ -1648,9 +1741,6 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
 
     private val _updateStatusNotificationsEnabled = MutableStateFlow(prefs.getBoolean(KEY_UPDATE_STATUS_NOTIFICATIONS_ENABLED, false))
     val updateStatusNotificationsEnabled: StateFlow<Boolean> = _updateStatusNotificationsEnabled.asStateFlow()
-    
-    private val _useSmartUpdatePolling = MutableStateFlow(prefs.getBoolean(KEY_USE_SMART_UPDATE_POLLING, BuildConfig.FLAVOR != "fdroid"))
-    val useSmartUpdatePolling: StateFlow<Boolean> = _useSmartUpdatePolling.asStateFlow()
 
     // Media Scan Mode
     private val _mediaScanMode = MutableStateFlow(
@@ -1973,10 +2063,6 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     )
     val pinnedFolders: StateFlow<List<String>> = _pinnedFolders.asStateFlow()
 
-    // Playlist Click Behavior
-    private val _playlistClickBehavior = MutableStateFlow(prefs.getString(KEY_PLAYLIST_CLICK_BEHAVIOR, "ask") ?: "ask")
-    val playlistClickBehavior: StateFlow<String> = _playlistClickBehavior.asStateFlow()
-
     // Backup and Restore Settings
     private val _lastBackupTimestamp = MutableStateFlow(safeLong(KEY_LAST_BACKUP_TIMESTAMP, 0L))
     val lastBackupTimestamp: StateFlow<Long> = _lastBackupTimestamp.asStateFlow()
@@ -2029,8 +2115,7 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
                 (
                     prefs.getBoolean(KEY_UPDATE_NOTIFICATIONS_ENABLED, false) ||
                         prefs.getBoolean(KEY_UPDATE_STATUS_NOTIFICATIONS_ENABLED, false)
-                    ) &&
-                prefs.getBoolean(KEY_USE_SMART_UPDATE_POLLING, false)) {
+                    )) {
                 scheduleUpdateNotificationWorker()
             }
             if (prefs.getBoolean(KEY_RHYTHM_PULSE_NOTIFICATIONS_ENABLED, false)) {
@@ -2317,9 +2402,22 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     }
     
     fun setArtistSeparatorDelimiters(delimiters: String) {
-        val sanitized = delimiters.filterNot { it.isWhitespace() }.toSet().joinToString("")
+        val sanitized = delimiters.trim().ifEmpty { DEFAULT_ARTIST_SEPARATOR_DELIMITERS }
         prefs.edit { putString(KEY_ARTIST_SEPARATOR_DELIMITERS, sanitized) }
         _artistSeparatorDelimiters.value = sanitized
+    }
+
+    fun setArtistSeparatorCustomDelimiters(tokens: List<String>) {
+        val clean = tokens.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val json = if (clean.isEmpty()) "" else ArtistSeparator.serializeDelimiters(clean)
+        prefs.edit {
+            if (json.isEmpty()) {
+                remove(KEY_ARTIST_SEPARATOR_CUSTOM_DELIMITERS)
+            } else {
+                putString(KEY_ARTIST_SEPARATOR_CUSTOM_DELIMITERS, json)
+            }
+        }
+        _artistSeparatorCustomDelimiters.value = clean
     }
 
     fun getArtistSeparatorCacheSignature(): String? {
@@ -2462,6 +2560,52 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         val hiddenString = sanitizedHiddenChips.joinToString(",")
         prefs.edit { putString(KEY_HIDDEN_PLAYER_CHIPS, hiddenString) }
         _hiddenPlayerChips.value = sanitizedHiddenChips
+    }
+
+    fun setExpressiveBottomButtonsNormal(order: List<String>) {
+        val sanitized = order.filter { it in allExpressiveBottomButtons }
+        val orderString = sanitized.joinToString(",")
+        prefs.edit { putString(KEY_EXPRESSIVE_BOTTOM_BUTTONS_NORMAL, orderString) }
+        _expressiveBottomButtonsNormal.value = sanitized
+    }
+
+    fun setExpressiveHiddenBottomButtonsNormal(hidden: Set<String>) {
+        val sanitized = hidden.filter { it in allExpressiveBottomButtons }.toSet()
+        val hiddenString = sanitized.joinToString(",")
+        prefs.edit { putString(KEY_EXPRESSIVE_HIDDEN_BOTTOM_BUTTONS_NORMAL, hiddenString) }
+        _expressiveHiddenBottomButtonsNormal.value = sanitized
+    }
+
+    fun resetExpressiveBottomButtonsNormal() {
+        prefs.edit {
+            remove(KEY_EXPRESSIVE_BOTTOM_BUTTONS_NORMAL)
+            remove(KEY_EXPRESSIVE_HIDDEN_BOTTOM_BUTTONS_NORMAL)
+        }
+        _expressiveBottomButtonsNormal.value = defaultExpressiveBottomButtonsNormal
+        _expressiveHiddenBottomButtonsNormal.value = emptySet()
+    }
+
+    fun setExpressiveBottomButtonsMerge(order: List<String>) {
+        val sanitized = order.filter { it in allExpressiveBottomButtons }
+        val orderString = sanitized.joinToString(",")
+        prefs.edit { putString(KEY_EXPRESSIVE_BOTTOM_BUTTONS_MERGE, orderString) }
+        _expressiveBottomButtonsMerge.value = sanitized
+    }
+
+    fun setExpressiveHiddenBottomButtonsMerge(hidden: Set<String>) {
+        val sanitized = hidden.filter { it in allExpressiveBottomButtons }.toSet()
+        val hiddenString = sanitized.joinToString(",")
+        prefs.edit { putString(KEY_EXPRESSIVE_HIDDEN_BOTTOM_BUTTONS_MERGE, hiddenString) }
+        _expressiveHiddenBottomButtonsMerge.value = sanitized
+    }
+
+    fun resetExpressiveBottomButtonsMerge() {
+        prefs.edit {
+            remove(KEY_EXPRESSIVE_BOTTOM_BUTTONS_MERGE)
+            remove(KEY_EXPRESSIVE_HIDDEN_BOTTOM_BUTTONS_MERGE)
+        }
+        _expressiveBottomButtonsMerge.value = defaultExpressiveBottomButtonsMerge
+        _expressiveHiddenBottomButtonsMerge.value = emptySet()
     }
 
     fun setLyricallySourcesOrder(order: List<String>) {
@@ -2764,6 +2908,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _autoAddToQueue.value = autoAdd
     }
     
+    fun setRespectAlbumOnPlay(respect: Boolean) {
+        prefs.edit { putBoolean(KEY_RESPECT_ALBUM_ON_PLAY, respect) }
+        _respectAlbumOnPlay.value = respect
+    }
+    
     fun setClearQueueOnNewSong(clearQueue: Boolean) {
         prefs.edit { putBoolean(KEY_CLEAR_QUEUE_ON_NEW_SONG, clearQueue) }
         _clearQueueOnNewSong.value = clearQueue
@@ -2807,6 +2956,11 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     fun setShuffleModePersistence(persist: Boolean) {
         prefs.edit { putBoolean(KEY_SHUFFLE_MODE_PERSISTENCE, persist) }
         _shuffleModePersistence.value = persist
+    }
+    
+    fun setKeepShuffleOnSelection(keep: Boolean) {
+        prefs.edit { putBoolean(KEY_KEEP_SHUFFLE_ON_SELECTION, keep) }
+        _keepShuffleOnSelection.value = keep
     }
     
     fun setSavedShuffleState(enabled: Boolean) {
@@ -2963,6 +3117,23 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         }
         _favoriteSongs.value = favoriteSongsJson
     }
+
+    /** Mark/unmark an album as a user-defined audiobook (book mode: sequential, no shuffle, resume). */
+    fun setAudiobookAlbum(albumId: String, enabled: Boolean) {
+        val updated = if (enabled) {
+            _audiobookAlbumIds.value + albumId
+        } else {
+            _audiobookAlbumIds.value - albumId
+        }
+        // Remove empty entries defensively
+        val cleaned = updated.filter { it.isNotBlank() }.toSet()
+        prefs.edit { putStringSet(KEY_AUDIOBOOK_ALBUMS, cleaned) }
+        _audiobookAlbumIds.value = cleaned
+    }
+
+    /** Whether the given album is marked as a user-defined audiobook. */
+    fun isAudiobookAlbum(albumId: String?): Boolean =
+        albumId?.isNotBlank() == true && albumId in _audiobookAlbumIds.value
     
     fun setDefaultPlaylistsEnabled(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_DEFAULT_PLAYLISTS_ENABLED, enabled) }
@@ -3450,18 +3621,6 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         prefs.edit { putBoolean(KEY_UPDATE_STATUS_NOTIFICATIONS_ENABLED, enable) }
         _updateStatusNotificationsEnabled.value = enable
 
-        if (shouldRunUpdateNotificationWorker()) {
-            scheduleUpdateNotificationWorker()
-        } else {
-            cancelUpdateNotificationWorker()
-        }
-    }
-
-    fun setUseSmartUpdatePolling(enable: Boolean) {
-        prefs.edit { putBoolean(KEY_USE_SMART_UPDATE_POLLING, enable) }
-        _useSmartUpdatePolling.value = enable
-        
-        // Update WorkManager scheduling
         if (shouldRunUpdateNotificationWorker()) {
             scheduleUpdateNotificationWorker()
         } else {
@@ -3959,13 +4118,6 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _pinnedFolders.value = emptyList()
     }
     
-    // Playlist Click Behavior Methods
-    fun setPlaylistClickBehavior(behavior: String) {
-        if (behavior in listOf("ask", "play_all", "play_one")) {
-            prefs.edit { putString(KEY_PLAYLIST_CLICK_BEHAVIOR, behavior) }
-            _playlistClickBehavior.value = behavior
-        }
-    }
     
     // Helper method to check if a song would be filtered by current whitelist rules
     fun isEffectivelyWhitelisted(songId: String, songPath: String?): Boolean {
@@ -4106,7 +4258,6 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     private fun shouldRunUpdateNotificationWorker(): Boolean {
         return _updatesEnabled.value &&
             _autoCheckForUpdates.value &&
-            _useSmartUpdatePolling.value &&
             (_updateNotificationsEnabled.value || _updateStatusNotificationsEnabled.value)
     }
 
@@ -5109,7 +5260,6 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         _updatesEnabled.value = prefs.getBoolean(KEY_UPDATES_ENABLED, BuildConfig.FLAVOR != "fdroid")
         _updateNotificationsEnabled.value = prefs.getBoolean(KEY_UPDATE_NOTIFICATIONS_ENABLED, BuildConfig.FLAVOR != "fdroid")
         _updateStatusNotificationsEnabled.value = prefs.getBoolean(KEY_UPDATE_STATUS_NOTIFICATIONS_ENABLED, false)
-        _useSmartUpdatePolling.value = prefs.getBoolean(KEY_USE_SMART_UPDATE_POLLING, BuildConfig.FLAVOR != "fdroid")
         _mediaScanMode.value = MediaScanMode.fromValue(prefs.getString(KEY_MEDIA_SCAN_MODE, "blacklist") ?: "blacklist")
         _includeHiddenWhitelistedMedia.value = prefs.getBoolean(KEY_INCLUDE_HIDDEN_WHITELISTED_MEDIA, true)
         _updateCheckIntervalHours.value = prefs.getInt(KEY_UPDATE_CHECK_INTERVAL_HOURS, 6)
@@ -6073,6 +6223,48 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
         prefs.edit { putBoolean(KEY_GESTURE_ARTWORK_DOUBLE_TAP, value) }
     }
     
+    private val _gestureArtworkSingleTap = MutableStateFlow(prefs.getBoolean(KEY_GESTURE_ARTWORK_SINGLE_TAP, true))
+    val gestureArtworkSingleTap: StateFlow<Boolean> = _gestureArtworkSingleTap.asStateFlow()
+    fun setGestureArtworkSingleTap(value: Boolean) {
+        _gestureArtworkSingleTap.value = value
+        prefs.edit { putBoolean(KEY_GESTURE_ARTWORK_SINGLE_TAP, value) }
+    }
+
+    private val _gestureQueueSwipeToRemove = MutableStateFlow(prefs.getBoolean(KEY_GESTURE_QUEUE_SWIPE_TO_REMOVE, true))
+    val gestureQueueSwipeToRemove: StateFlow<Boolean> = _gestureQueueSwipeToRemove.asStateFlow()
+    fun setGestureQueueSwipeToRemove(value: Boolean) {
+        _gestureQueueSwipeToRemove.value = value
+        prefs.edit { putBoolean(KEY_GESTURE_QUEUE_SWIPE_TO_REMOVE, value) }
+    }
+
+    private val _gestureLibrarySwipeTabs = MutableStateFlow(prefs.getBoolean(KEY_GESTURE_LIBRARY_SWIPE_TABS, true))
+    val gestureLibrarySwipeTabs: StateFlow<Boolean> = _gestureLibrarySwipeTabs.asStateFlow()
+    fun setGestureLibrarySwipeTabs(value: Boolean) {
+        _gestureLibrarySwipeTabs.value = value
+        prefs.edit { putBoolean(KEY_GESTURE_LIBRARY_SWIPE_TABS, value) }
+    }
+
+    private val _miniPlayerSwipeTracks = MutableStateFlow(prefs.getBoolean(KEY_MINIPLAYER_SWIPE_TRACKS, true))
+    val miniPlayerSwipeTracks: StateFlow<Boolean> = _miniPlayerSwipeTracks.asStateFlow()
+    fun setMiniPlayerSwipeTracks(value: Boolean) {
+        _miniPlayerSwipeTracks.value = value
+        prefs.edit { putBoolean(KEY_MINIPLAYER_SWIPE_TRACKS, value) }
+    }
+
+    private val _miniPlayerSwipeDismiss = MutableStateFlow(prefs.getBoolean(KEY_MINIPLAYER_SWIPE_DISMISS, true))
+    val miniPlayerSwipeDismiss: StateFlow<Boolean> = _miniPlayerSwipeDismiss.asStateFlow()
+    fun setMiniPlayerSwipeDismiss(value: Boolean) {
+        _miniPlayerSwipeDismiss.value = value
+        prefs.edit { putBoolean(KEY_MINIPLAYER_SWIPE_DISMISS, value) }
+    }
+
+    private val _tapLyricsToSeek = MutableStateFlow(prefs.getBoolean(KEY_TAP_LYRICS_TO_SEEK, true))
+    val tapLyricsToSeek: StateFlow<Boolean> = _tapLyricsToSeek.asStateFlow()
+    fun setTapLyricsToSeek(value: Boolean) {
+        _tapLyricsToSeek.value = value
+        prefs.edit { putBoolean(KEY_TAP_LYRICS_TO_SEEK, value) }
+    }
+    
     // Default section order for home screen
     private val defaultHomeSectionOrder = listOf(
         "DISCOVER", "RECENTLY_PLAYED", "ARTISTS", "RHYTHM_GUARD",
@@ -6093,12 +6285,13 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
     }
 
     private val defaultStreamingHomeSectionOrder = listOf(
-        "DISCOVER", "RECENTLY_PLAYED", "ARTISTS", "PLAYLISTS", "RHYTHM_GUARD", "RHYTHM_STATS", "NEW_RELEASES"
+        "DISCOVER", "RECENTLY_PLAYED", "ARTISTS", "RHYTHM_GUARD", "RHYTHM_STATS", "NEW_RELEASES"
     )
 
     private fun normalizeStreamingHomeSectionOrder(rawSections: List<String>): List<String> {
         val normalized = rawSections
             .map(String::trim)
+            .filter { it != "PLAYLISTS" && it.isNotBlank() }
             .map {
                 when (it) {
                     "STATS" -> "RHYTHM_STATS"
@@ -6107,7 +6300,6 @@ private val _autoCheckForUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CH
                     else -> it
                 }
             }
-            .filter { it.isNotBlank() }
 
         return (normalized + defaultStreamingHomeSectionOrder).distinct()
     }

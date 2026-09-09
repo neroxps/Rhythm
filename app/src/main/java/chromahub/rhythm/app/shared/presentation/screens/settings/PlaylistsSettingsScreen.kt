@@ -84,12 +84,12 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -227,7 +227,7 @@ fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
                 SettingItem(
                     RhythmIcons.Delete,
                     context.getString(R.string.settings_cleanup_empty_playlists),
-                    context.resources.safeGetQuantityString(R.plurals.settings_cleanup_empty_playlists_desc, emptyPlaylists.size, emptyPlaylists.size),
+                    pluralStringResource(R.plurals.settings_cleanup_empty_playlists_desc, emptyPlaylists.size, emptyPlaylists.size),
                     onClick = {
                         HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
                         showCleanupConfirmDialog = true
@@ -526,6 +526,7 @@ fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
     }
 
     if (showCleanupConfirmDialog) {
+        val emptyCount = emptyPlaylists.size
         AlertDialog(
             onDismissRequest = { showCleanupConfirmDialog = false },
             icon = {
@@ -544,7 +545,7 @@ fun PlaylistsSettingsScreen(onBackClick: () -> Unit) {
                 )
             },
             text = {
-                Text(context.resources.safeGetQuantityString(R.plurals.dialog_cleanup_empty_playlists_message, emptyPlaylists.size, emptyPlaylists.size))
+                Text(pluralStringResource(R.plurals.dialog_cleanup_empty_playlists_message, emptyCount, emptyCount))
             },
             confirmButton = {
                 Button(

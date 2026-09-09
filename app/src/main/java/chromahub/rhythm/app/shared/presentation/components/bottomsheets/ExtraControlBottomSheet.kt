@@ -4,6 +4,7 @@
  */
 
 package chromahub.rhythm.app.shared.presentation.components.bottomsheets
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
 
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.MaterialSymbolIcon
@@ -120,9 +121,8 @@ fun ExtraControlBottomSheet(
     sleepTimerActive: Boolean,
     sleepTimerRemainingSeconds: Long,
     lyrics: LyricsData?,
-    isFavorite: Boolean = false,
     onAddToPlaylist: () -> Unit,
-    onToggleFavorite: () -> Unit = {},
+    onEditControls: (() -> Unit)? = null,
     onPlaybackSpeed: () -> Unit,
     onPlaybackPitch: () -> Unit = {},
     onEqualizer: () -> Unit,
@@ -139,13 +139,6 @@ fun ExtraControlBottomSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var showContent by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        delay(100)
-        showContent = true
-    }
-
     fun dismissAndDo(action: () -> Unit) {
         scope.launch {
             sheetState.hide()
@@ -154,42 +147,37 @@ fun ExtraControlBottomSheet(
         }
     }
 
-    val primary = MaterialTheme.colorScheme.primaryContainer
-    val onPrimary = MaterialTheme.colorScheme.onPrimaryContainer
     val secondary = MaterialTheme.colorScheme.secondaryContainer
     val onSecondary = MaterialTheme.colorScheme.onSecondaryContainer
     val tertiary = MaterialTheme.colorScheme.tertiaryContainer
     val onTertiary = MaterialTheme.colorScheme.onTertiaryContainer
-    val errorContainer = MaterialTheme.colorScheme.errorContainer
-    val error = MaterialTheme.colorScheme.error
 
     val actions = buildList {
-        // Add to Playlist (always shown)
+        onEditControls?.let { editControls ->
+            add(ControlAction(
+                icon = RhythmIcons.Edit,
+                label = context.getString(R.string.bottomsheet_edit_controls),
+                description = null,
+                containerColor = secondary,
+                iconColor = onSecondary,
+                onClick = {
+                    HapticUtils.performHapticFeedback(context, haptic, HapticType.HEAVY)
+                    dismissAndDo { editControls() }
+                }
+            ))
+        }
+
         add(ControlAction(
             icon = RhythmIcons.AddToPlaylist,
             label = context.getString(R.string.bottomsheet_add_to_playlist),
             description = null,
-            containerColor = primary,
-            iconColor = onPrimary,
+            containerColor = secondary,
+            iconColor = onSecondary,
             onClick = {
                 HapticUtils.performHapticFeedback(context, haptic, HapticType.HEAVY)
                 dismissAndDo { onAddToPlaylist() }
             }
         ))
-
-        if ("FAVORITE" !in hiddenChips) {
-            add(ControlAction(
-                icon = if (isFavorite) MaterialSymbolIcon("thumb_down", filled = true) else MaterialSymbolIcon("thumb_up", filled = true),
-                label = if (isFavorite) context.getString(R.string.action_unfavorite) else context.getString(R.string.player_chip_favorite),
-                description = if (isFavorite) context.getString(R.string.extrasheet_saved) else null,
-                containerColor = if (isFavorite) errorContainer else primary,
-                iconColor = if (isFavorite) error else onPrimary,
-                onClick = {
-                    HapticUtils.performHapticFeedback(context, haptic, HapticType.HEAVY)
-                    dismissAndDo { onToggleFavorite() }
-                }
-            ))
-        }
 
         if ("SPEED" !in hiddenChips || "PITCH" !in hiddenChips) {
             add(ControlAction(
@@ -280,7 +268,6 @@ fun ExtraControlBottomSheet(
             ))
         }
 
-        // Song Info (always shown)
         add(ControlAction(
             icon = RhythmIcons.Info,
             label = context.getString(R.string.action_song_info),
@@ -293,7 +280,6 @@ fun ExtraControlBottomSheet(
             }
         ))
 
-        // Share File (always shown)
         add(ControlAction(
             icon = RhythmIcons.Share,
             label = context.getString(R.string.extrasheet_share_file),
@@ -307,7 +293,11 @@ fun ExtraControlBottomSheet(
         ))
     }
 
-    ModalBottomSheet(
+    val scrollState = rememberScrollState()
+
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.WIDE_DIALOG,
+        scrollState = scrollState,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -322,55 +312,51 @@ fun ExtraControlBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .padding(bottom = 16.dp)
         ) {
             // Header — matches SongOptionsBottomSheet style
-            AnimatedVisibility(
-                visible = showContent,
-                enter = fadeIn() + slideInVertically { it },
-                exit = fadeOut() + slideOutVertically { it }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
-                Column(
+                Text(
+                    text = stringResource(R.string.settings_shapes_player_controls),
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = CircleShape
+                        )
                 ) {
                     Text(
-                        text = stringResource(R.string.settings_shapes_player_controls),
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        text = stringResource(R.string.libraryscreen_more_actions),
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = CircleShape
-                            )
-                    ) {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            text = stringResource(R.string.libraryscreen_more_actions),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
                 }
             }
 
             // Grouped status grid layout matching RhythmGuardTrendsRow
-            AnimatedVisibility(
-                visible = showContent,
-                enter = fadeIn() + slideInVertically { it },
-                exit = fadeOut() + slideOutVertically { it }
-            ) {
-                Column(
+            AdaptiveSheetScrollContainer(
+                    scrollState = scrollState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+                        .weight(1f, fill = false)
+                ) { endPadding ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, end = 24.dp + endPadding, top = 8.dp, bottom = 8.dp)
+                            .verticalScroll(scrollState),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                     actions.chunked(2).forEachIndexed { rowIndex, rowActions ->
                         Row(
                             modifier = Modifier

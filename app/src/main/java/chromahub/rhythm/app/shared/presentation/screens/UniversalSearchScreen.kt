@@ -5,9 +5,15 @@
 
 package chromahub.rhythm.app.shared.presentation.screens
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+
 import chromahub.rhythm.app.shared.presentation.components.icons.RhythmIcons
 import chromahub.rhythm.app.shared.presentation.components.icons.MaterialSymbolIcon
 import chromahub.rhythm.app.shared.presentation.components.icons.Icon
+import chromahub.rhythm.app.shared.presentation.components.common.ExpressiveCookieEmptyState
+import chromahub.rhythm.app.shared.presentation.components.common.rememberExpressiveShape
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -534,24 +540,83 @@ fun UniversalSearchScreen(
 
                         if (searchHistory.isEmpty()) {
                             item(key = "empty_prompt") {
+                                val cookieShape = rememberExpressiveShape("COOKIE_12")
+                                val smallCookieShape = rememberExpressiveShape("COOKIE_6")
+                                val containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                val contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 80.dp)
+                                        .padding(vertical = 48.dp)
                                         .animateItem(spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(topStart = 48.dp, topEnd = 48.dp, bottomStart = 16.dp, bottomEnd = 48.dp),
-                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(120.dp)
+                                    Box(
+                                        modifier = Modifier.size(132.dp),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(RhythmIcons.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(48.dp))
+                                        Surface(
+                                            shape = smallCookieShape,
+                                            color = containerColor.copy(alpha = 0.45f),
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .align(Alignment.TopStart)
+                                                .offset(x = (-6).dp, y = 10.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                                Icon(
+                                                    imageVector = RhythmIcons.MusicNote,
+                                                    contentDescription = null,
+                                                    tint = contentColor.copy(alpha = 0.55f),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                        Surface(
+                                            shape = smallCookieShape,
+                                            color = containerColor.copy(alpha = 0.45f),
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .align(Alignment.BottomEnd)
+                                                .offset(x = 8.dp, y = (-6).dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                                Icon(
+                                                    imageVector = RhythmIcons.Tune,
+                                                    contentDescription = null,
+                                                    tint = contentColor.copy(alpha = 0.55f),
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+                                        Surface(
+                                            shape = cookieShape,
+                                            color = containerColor,
+                                            shadowElevation = 6.dp,
+                                            modifier = Modifier.size(96.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                                Icon(
+                                                    imageVector = RhythmIcons.Search,
+                                                    contentDescription = null,
+                                                    tint = contentColor,
+                                                    modifier = Modifier.size(44.dp)
+                                                )
+                                            }
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(24.dp))
-                                    Text(stringResource(R.string.universalsearchscreen_search_across_local_streaming), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+
+                                    Spacer(modifier = Modifier.height(20.dp))
+
+                                    Text(
+                                        text = stringResource(R.string.universalsearchscreen_search_across_local_streaming),
+                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 32.dp)
+                                    )
                                 }
                             }
                         }
@@ -582,44 +647,19 @@ fun UniversalSearchScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         item(key = "no_results") {
-                            Column(
+                            ExpressiveCookieEmptyState(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 64.dp)
+                                    .padding(vertical = 48.dp)
                                     .animateItem(),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
-                                    modifier = Modifier.size(120.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = RhythmIcons.Search,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                            modifier = Modifier.size(60.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(24.dp))
-                                Text(
-                                    text = stringResource(R.string.no_results_found),
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    textAlign = TextAlign.Center
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = stringResource(R.string.search_no_results_query_format, query),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 32.dp)
-                                )
-                            }
+                                title = stringResource(R.string.no_results_found),
+                                subtitle = stringResource(R.string.search_no_results_query_format, query),
+                                mainIcon = RhythmIcons.Search,
+                                accentIcon = RhythmIcons.Search,
+                                cornerIcon = RhythmIcons.MusicNote,
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
                     }
                 } else if (isLandscapeTablet) {
@@ -1439,7 +1479,16 @@ fun UniversalSearchScreen(
                 onGoToAlbum = {
                     showSongOptionsSheet = false
                     if (isLocal) {
-                        val album = localViewModel.filteredAlbums.value.findAlbumForSong(songObj)
+                        val allLocalAlbums = localViewModel.albums.value.ifEmpty { localViewModel.filteredAlbums.value }
+                        val album = allLocalAlbums.findAlbumForSong(songObj)
+                            ?: songObj.album.trim().takeIf { it.isNotBlank() }?.let { albumTitle ->
+                                Album(
+                                    id = songObj.albumId.ifBlank { "unknown_$albumTitle" },
+                                    title = albumTitle,
+                                    artist = songObj.albumArtist?.takeIf { it.isNotBlank() } ?: songObj.artist,
+                                    artworkUri = songObj.artworkUri
+                                )
+                            }
                         if (album != null) {
                             handleAction("LOCAL") { onLocalAlbumClick(album) }
                         } else Toast.makeText(context, R.string.universalsearchscreen_album_not_found, Toast.LENGTH_SHORT).show()
@@ -1465,7 +1514,7 @@ fun UniversalSearchScreen(
                     showSongOptionsSheet = false
                     if (isLocal) {
                         val separatorEnabled = appSettings.artistSeparatorEnabled.value
-                        val delimiters = appSettings.artistSeparatorDelimiters.value.ifBlank { "/;,+&" }
+                        val delimiters = appSettings.artistSeparatorDelimiters.value.ifBlank { AppSettings.DEFAULT_ARTIST_SEPARATOR_DELIMITERS }
                         val songArtistNames = chromahub.rhythm.app.util.ArtistSeparator.splitArtistNames(
                             artistName = songObj.artist,
                             delimiters = delimiters,
@@ -1473,6 +1522,10 @@ fun UniversalSearchScreen(
                         )
                         val artist = songArtistNames.firstNotNullOfOrNull { name ->
                             localArtists.find { it.name.equals(name, ignoreCase = true) }
+                        } ?: songArtistNames.firstOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { name ->
+                            Artist(id = name, name = name)
+                        } ?: songObj.artist.trim().takeIf { it.isNotBlank() }?.let { name ->
+                            Artist(id = name, name = name)
                         }
                         if (artist != null) {
                             handleAction("LOCAL") { onLocalArtistClick(artist) }
@@ -2037,7 +2090,8 @@ fun UniversalSongOptionsBottomSheet(
     var showContent by remember { mutableStateOf(true) }
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.AUTO_DIALOG,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -2052,9 +2106,7 @@ fun UniversalSongOptionsBottomSheet(
         tonalElevation = 0.dp
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+            modifier = Modifier.fillMaxWidth()
         ) {
             AnimatedVisibility(
                 visible = showContent,
@@ -2064,207 +2116,213 @@ fun UniversalSongOptionsBottomSheet(
                 UniversalSongOptionsHeader(songObj = songObj)
             }
 
+            val scrollState = rememberScrollState()
+
             AnimatedVisibility(
                 visible = showContent,
                 enter = fadeIn() + slideInVertically { it },
                 exit = fadeOut() + slideOutVertically { it }
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val resolvedSong = remember(songObj) {
-                        if (songObj is Song) songObj else (songObj as StreamingSong).toLocalSong()
-                    }
-                    val onShare = {
-                        try {
-                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "audio/*"
-                                putExtra(android.content.Intent.EXTRA_STREAM, resolvedSong.uri)
-                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(android.content.Intent.createChooser(shareIntent, "Share ${resolvedSong.title}"))
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(context, R.string.materialplayerscreen_unable_to_share_file, android.widget.Toast.LENGTH_SHORT).show()
+                AdaptiveSheetScrollContainer(
+                    scrollState = scrollState,
+                    modifier = Modifier.fillMaxWidth()
+                ) { endPadding ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(scrollState)
+                            .padding(start = 16.dp, end = 16.dp + endPadding, top = 8.dp, bottom = 32.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val resolvedSong = remember(songObj) {
+                            if (songObj is Song) songObj else (songObj as StreamingSong).toLocalSong()
                         }
-                    }
+                        val onShare = {
+                            try {
+                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "audio/*"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, resolvedSong.uri)
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share ${resolvedSong.title}"))
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(context, R.string.materialplayerscreen_unable_to_share_file, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
 
-                    val isLocal = songObj is Song
-                    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
-                    val onPrimaryContainer = MaterialTheme.colorScheme.onPrimaryContainer
-                    val secondaryContainer = MaterialTheme.colorScheme.secondaryContainer
-                    val onSecondaryContainer = MaterialTheme.colorScheme.onSecondaryContainer
-                    val tertiaryContainer = MaterialTheme.colorScheme.tertiaryContainer
-                    val onTertiaryContainer = MaterialTheme.colorScheme.onTertiaryContainer
-                    val errorContainer = MaterialTheme.colorScheme.errorContainer
-                    val errorColor = MaterialTheme.colorScheme.error
+                        val isLocal = songObj is Song
+                        val primaryContainer = MaterialTheme.colorScheme.primaryContainer
+                        val onPrimaryContainer = MaterialTheme.colorScheme.onPrimaryContainer
+                        val secondaryContainer = MaterialTheme.colorScheme.secondaryContainer
+                        val onSecondaryContainer = MaterialTheme.colorScheme.onSecondaryContainer
+                        val tertiaryContainer = MaterialTheme.colorScheme.tertiaryContainer
+                        val onTertiaryContainer = MaterialTheme.colorScheme.onTertiaryContainer
+                        val errorContainer = MaterialTheme.colorScheme.errorContainer
+                        val errorColor = MaterialTheme.colorScheme.error
 
-                    val gridItems = remember(isLocal, isFavorite) {
-                        buildList {
-                            add(
-                                UniversalOptionItem(
-                                    icon = RhythmIcons.SkipNext,
-                                    text = context.getString(R.string.action_play_next),
-                                    containerColor = primaryContainer,
-                                    iconColor = onPrimaryContainer,
-                                    onClick = onPlayNext
-                                )
-                            )
-                            add(
-                                UniversalOptionItem(
-                                    icon = RhythmIcons.Queue,
-                                    text = context.getString(R.string.action_add_to_queue),
-                                    containerColor = primaryContainer,
-                                    iconColor = onPrimaryContainer,
-                                    onClick = onAddToQueue
-                                )
-                            )
-                            add(
-                                UniversalOptionItem(
-                                    icon = RhythmIcons.AddToPlaylist,
-                                    text = context.getString(R.string.content_desc_add_to_playlist),
-                                    containerColor = primaryContainer,
-                                    iconColor = onPrimaryContainer,
-                                    onClick = onAddToPlaylist
-                                )
-                            )
-                            add(
-                                UniversalOptionItem(
-                                    icon = if (isFavorite) MaterialSymbolIcon("thumb_down", filled = true) else MaterialSymbolIcon("thumb_up", filled = true),
-                                    text = if (isFavorite) context.getString(R.string.action_dislike) else context.getString(R.string.action_like),
-                                    containerColor = tertiaryContainer,
-                                    iconColor = onTertiaryContainer,
-                                    onClick = onToggleFavorite
-                                )
-                            )
-                            add(
-                                UniversalOptionItem(
-                                    icon = RhythmIcons.Album,
-                                    text = context.getString(R.string.multiselectionbottomsheet_go_to_album),
-                                    containerColor = secondaryContainer,
-                                    iconColor = onSecondaryContainer,
-                                    onClick = onGoToAlbum
-                                )
-                            )
-                            add(
-                                UniversalOptionItem(
-                                    icon = RhythmIcons.Artist,
-                                    text = context.getString(R.string.multiselectionbottomsheet_go_to_artist),
-                                    containerColor = secondaryContainer,
-                                    iconColor = onSecondaryContainer,
-                                    onClick = onGoToArtist
-                                )
-                            )
-                            add(
-                                UniversalOptionItem(
-                                    icon = RhythmIcons.Info,
-                                    text = context.getString(R.string.action_song_info),
-                                    containerColor = secondaryContainer,
-                                    iconColor = onSecondaryContainer,
-                                    onClick = onShowSongInfo
-                                )
-                            )
-                            if (isLocal) {
+                        val gridItems = remember(isLocal, isFavorite) {
+                            buildList {
                                 add(
                                     UniversalOptionItem(
-                                        icon = RhythmIcons.Block,
-                                        text = context.getString(R.string.action_add_to_blacklist),
-                                        containerColor = errorContainer,
-                                        iconColor = errorColor,
-                                        onClick = onAddToBlacklist
+                                        icon = RhythmIcons.SkipNext,
+                                        text = context.getString(R.string.action_play_next),
+                                        containerColor = primaryContainer,
+                                        iconColor = onPrimaryContainer,
+                                        onClick = onPlayNext
                                     )
                                 )
                                 add(
                                     UniversalOptionItem(
-                                        icon = RhythmIcons.Delete,
-                                        text = context.getString(R.string.action_delete_song),
-                                        containerColor = errorContainer,
-                                        iconColor = errorColor,
-                                        onClick = onDeleteSong
+                                        icon = RhythmIcons.Queue,
+                                        text = context.getString(R.string.action_add_to_queue),
+                                        containerColor = primaryContainer,
+                                        iconColor = onPrimaryContainer,
+                                        onClick = onAddToQueue
+                                    )
+                                )
+                                add(
+                                    UniversalOptionItem(
+                                        icon = RhythmIcons.AddToPlaylist,
+                                        text = context.getString(R.string.content_desc_add_to_playlist),
+                                        containerColor = primaryContainer,
+                                        iconColor = onPrimaryContainer,
+                                        onClick = onAddToPlaylist
+                                    )
+                                )
+                                add(
+                                    UniversalOptionItem(
+                                        icon = if (isFavorite) MaterialSymbolIcon("thumb_down", filled = true) else MaterialSymbolIcon("thumb_up", filled = true),
+                                        text = if (isFavorite) context.getString(R.string.action_dislike) else context.getString(R.string.action_like),
+                                        containerColor = tertiaryContainer,
+                                        iconColor = onTertiaryContainer,
+                                        onClick = onToggleFavorite
+                                    )
+                                )
+                                add(
+                                    UniversalOptionItem(
+                                        icon = RhythmIcons.Album,
+                                        text = context.getString(R.string.multiselectionbottomsheet_go_to_album),
+                                        containerColor = secondaryContainer,
+                                        iconColor = onSecondaryContainer,
+                                        onClick = onGoToAlbum
+                                    )
+                                )
+                                add(
+                                    UniversalOptionItem(
+                                        icon = RhythmIcons.Artist,
+                                        text = context.getString(R.string.multiselectionbottomsheet_go_to_artist),
+                                        containerColor = secondaryContainer,
+                                        iconColor = onSecondaryContainer,
+                                        onClick = onGoToArtist
+                                    )
+                                )
+                                add(
+                                    UniversalOptionItem(
+                                        icon = RhythmIcons.Info,
+                                        text = context.getString(R.string.action_song_info),
+                                        containerColor = secondaryContainer,
+                                        iconColor = onSecondaryContainer,
+                                        onClick = onShowSongInfo
+                                    )
+                                )
+                                if (isLocal) {
+                                    add(
+                                        UniversalOptionItem(
+                                            icon = RhythmIcons.Block,
+                                            text = context.getString(R.string.action_add_to_blacklist),
+                                            containerColor = errorContainer,
+                                            iconColor = errorColor,
+                                            onClick = onAddToBlacklist
+                                        )
+                                    )
+                                    add(
+                                        UniversalOptionItem(
+                                            icon = RhythmIcons.Delete,
+                                            text = context.getString(R.string.action_delete_song),
+                                            containerColor = errorContainer,
+                                            iconColor = errorColor,
+                                            onClick = onDeleteSong
+                                        )
+                                    )
+                                }
+                                add(
+                                    UniversalOptionItem(
+                                        icon = RhythmIcons.Share,
+                                        text = context.getString(R.string.action_share),
+                                        containerColor = secondaryContainer,
+                                        iconColor = onSecondaryContainer,
+                                        onClick = onShare
                                     )
                                 )
                             }
-                            add(
-                                UniversalOptionItem(
-                                    icon = RhythmIcons.Share,
-                                    text = context.getString(R.string.action_share),
-                                    containerColor = secondaryContainer,
-                                    iconColor = onSecondaryContainer,
-                                    onClick = onShare
+                        }
+
+                        val chunks = remember(gridItems) { gridItems.chunked(2) }
+
+                        chunks.forEachIndexed { rowIndex, chunk ->
+                            if (chunk.size == 2) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(IntrinsicSize.Max),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                    ) {
+                                        val index0 = rowIndex * 2
+                                        UniversalSongOptionGridItem(
+                                            icon = chunk[0].icon,
+                                            text = chunk[0].text,
+                                            containerColor = chunk[0].containerColor,
+                                            iconColor = chunk[0].iconColor,
+                                            shape = getUniversalGridItemShape(index0, gridItems.size),
+                                            onClick = {
+                                                HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                                chunk[0].onClick()
+                                            },
+                                            modifier = Modifier.fillMaxHeight()
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                    ) {
+                                        val index1 = rowIndex * 2 + 1
+                                        UniversalSongOptionGridItem(
+                                            icon = chunk[1].icon,
+                                            text = chunk[1].text,
+                                            containerColor = chunk[1].containerColor,
+                                            iconColor = chunk[1].iconColor,
+                                            shape = getUniversalGridItemShape(index1, gridItems.size),
+                                            onClick = {
+                                                HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                                chunk[1].onClick()
+                                            },
+                                            modifier = Modifier.fillMaxHeight()
+                                        )
+                                    }
+                                }
+                            } else {
+                                val index0 = rowIndex * 2
+                                UniversalSongOptionGridItem(
+                                    icon = chunk[0].icon,
+                                    text = chunk[0].text,
+                                    containerColor = chunk[0].containerColor,
+                                    iconColor = chunk[0].iconColor,
+                                    shape = getUniversalGridItemShape(index0, gridItems.size),
+                                    onClick = {
+                                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                        chunk[0].onClick()
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
                                 )
-                            )
-                        }
-                    }
-
-                    val chunks = remember(gridItems) { gridItems.chunked(2) }
-
-                    chunks.forEachIndexed { rowIndex, chunk ->
-                        if (chunk.size == 2) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(IntrinsicSize.Max),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                ) {
-                                    val index0 = rowIndex * 2
-                                    UniversalSongOptionGridItem(
-                                        icon = chunk[0].icon,
-                                        text = chunk[0].text,
-                                        containerColor = chunk[0].containerColor,
-                                        iconColor = chunk[0].iconColor,
-                                        shape = getUniversalGridItemShape(index0, gridItems.size),
-                                        onClick = {
-                                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
-                                            chunk[0].onClick()
-                                        },
-                                        modifier = Modifier.fillMaxHeight()
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                ) {
-                                    val index1 = rowIndex * 2 + 1
-                                    UniversalSongOptionGridItem(
-                                        icon = chunk[1].icon,
-                                        text = chunk[1].text,
-                                        containerColor = chunk[1].containerColor,
-                                        iconColor = chunk[1].iconColor,
-                                        shape = getUniversalGridItemShape(index1, gridItems.size),
-                                        onClick = {
-                                            HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
-                                            chunk[1].onClick()
-                                        },
-                                        modifier = Modifier.fillMaxHeight()
-                                    )
-                                }
                             }
-                        } else {
-                            val index0 = rowIndex * 2
-                            UniversalSongOptionGridItem(
-                                icon = chunk[0].icon,
-                                text = chunk[0].text,
-                                containerColor = chunk[0].containerColor,
-                                iconColor = chunk[0].iconColor,
-                                shape = getUniversalGridItemShape(index0, gridItems.size),
-                                onClick = {
-                                    HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
-                                    chunk[0].onClick()
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(32.dp))
                 }
             }
         }
@@ -2294,7 +2352,7 @@ private fun UniversalSongOptionsHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
         Text(
             text = stringResource(R.string.playlistsongoptionsbottomsheet_song_options),

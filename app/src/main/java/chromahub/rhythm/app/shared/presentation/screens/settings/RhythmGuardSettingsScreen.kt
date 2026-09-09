@@ -7,6 +7,10 @@
 
 package chromahub.rhythm.app.shared.presentation.screens.settings
 
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.AdaptiveSheetScrollContainer
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.RhythmAdaptiveModalSheet
+import chromahub.rhythm.app.shared.presentation.components.bottomsheets.SheetAdaptiveType
+
 
 
 import chromahub.rhythm.app.ui.LocalMiniPlayerPadding
@@ -88,7 +92,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import chromahub.rhythm.app.BuildConfig
@@ -409,7 +412,6 @@ fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
                         TunerAnimatedSwitch(
                             checked = isRhythmGuardEnabled,
                             onCheckedChange = { enabled ->
-                                HapticUtils.performHapticFeedback(context, haptic, HapticType.HEAVY)
                                 if (enabled) {
                                     val restoredMode = if (auraMode == AppSettings.RHYTHM_GUARD_MODE_MANUAL) {
                                         AppSettings.RHYTHM_GUARD_MODE_MANUAL
@@ -529,7 +531,10 @@ fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Slider(
                                 value = auraAge.toFloat(),
-                                onValueChange = { appSettings.setRhythmGuardAge(it.toInt()) },
+                                onValueChange = {
+                                    HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
+                                    appSettings.setRhythmGuardAge(it.toInt())
+                                },
                                 valueRange = 8f..80f,
                                 steps = 71
                             )
@@ -654,6 +659,7 @@ fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
                                     Slider(
                                         value = maxOf(alertThresholdMinutes, 15).toFloat(),
                                         onValueChange = {
+                                            HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
                                             appSettings.setRhythmGuardAlertThresholdMinutes(
                                                 it.toInt()
                                             )
@@ -714,6 +720,7 @@ fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
                                     Slider(
                                         value = warningTimeoutMinutes.toFloat(),
                                         onValueChange = {
+                                            HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
                                             appSettings.setRhythmGuardWarningTimeoutMinutes(
                                                 it.toInt()
                                             )
@@ -774,6 +781,7 @@ fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
                                     Slider(
                                         value = postTimeoutCooldownMinutes.toFloat(),
                                         onValueChange = {
+                                            HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
                                             appSettings.setRhythmGuardPostTimeoutCooldownMinutes(
                                                 it.toInt()
                                             )
@@ -834,6 +842,7 @@ fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
                                     Slider(
                                         value = breakResumeMinutes.toFloat(),
                                         onValueChange = {
+                                            HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
                                             appSettings.setRhythmGuardBreakResumeMinutes(
                                                 it.toInt()
                                             )
@@ -1033,7 +1042,10 @@ fun RhythmGuardSettingsScreen(onBackClick: () -> Unit) {
                                                 it
                                             )
                                         },
-                                        valueRange = 0.40f..0.95f
+                                        valueRange = 0.40f..0.95f,
+                                        onValueChangeFinished = {
+                                            HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
+                                        }
                                     )
                                 }
                             }
@@ -1443,28 +1455,15 @@ fun BackupRestoreSectionPickerBottomSheet(
 ) {
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     val context = LocalContext.current
-    var showContent by remember { mutableStateOf(false) }
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (showContent) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "backup_restore_picker_alpha"
-    )
-
-    LaunchedEffect(Unit) {
-        delay(80)
-        showContent = true
-    }
-
+    val haptic = LocalHapticFeedback.current
     val selectedSectionCount = listOf(
         sections.includeGeneralSettings,
         sections.includeLibraryData,
         sections.includeStatsAndRhythmGuard
     ).count { it }
 
-    ModalBottomSheet(
+    RhythmAdaptiveModalSheet(
+        adaptiveType = SheetAdaptiveType.AUTO_DIALOG,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1472,32 +1471,26 @@ fun BackupRestoreSectionPickerBottomSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(bottom = 20.dp)
-                .graphicsLayer(alpha = contentAlpha)
-        ) {
-            StandardBottomSheetHeader(
-                title = title,
-                subtitle = subtitle,
-                visible = showContent,
-                modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
-            )
+        StandardBottomSheetHeader(
+            title = title,
+            subtitle = subtitle,
+            visible = true
+        )
 
-            Spacer(modifier = Modifier.height(8.dp))
+        val scrollState = rememberScrollState()
 
-            Box(
+        AdaptiveSheetScrollContainer(
+            scrollState = scrollState,
+            modifier = Modifier.fillMaxWidth()
+        ) { endPadding ->
+            Column(
                 modifier = Modifier
-                    .weight(1f, fill = false)
                     .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(end = endPadding)
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                ) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1627,6 +1620,7 @@ fun BackupRestoreSectionPickerBottomSheet(
                                 }
                             },
                             onClick = {
+                                HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
                                 onSectionsChange(sections.copy(includeGeneralSettings = !sections.includeGeneralSettings))
                             }
                         ),
@@ -1672,6 +1666,7 @@ fun BackupRestoreSectionPickerBottomSheet(
                                 }
                             },
                             onClick = {
+                                HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
                                 onSectionsChange(sections.copy(includeLibraryData = !sections.includeLibraryData))
                             }
                         ),
@@ -1717,6 +1712,7 @@ fun BackupRestoreSectionPickerBottomSheet(
                                 }
                             },
                             onClick = {
+                                HapticUtils.performHapticFeedback(context, haptic, HapticType.LIGHT)
                                 onSectionsChange(sections.copy(includeStatsAndRhythmGuard = !sections.includeStatsAndRhythmGuard))
                             }
                         )
@@ -1783,13 +1779,6 @@ fun BackupRestoreSectionPickerBottomSheet(
             }
         }
     }
-}
-
-
-
-
-
-
 
 // ============ Guard dashboard components ============
 

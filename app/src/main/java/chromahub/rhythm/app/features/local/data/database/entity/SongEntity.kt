@@ -34,6 +34,8 @@ data class SongEntity(
 )
 
 fun SongEntity.toSong(): chromahub.rhythm.app.shared.data.model.Song {
+    val normalizedDateAdded = if (dateAdded in 1..99_999_999_999L) dateAdded * 1000L else dateAdded
+    val normalizedDateModified = if (dateModified in 1..99_999_999_999L) dateModified * 1000L else dateModified
     return chromahub.rhythm.app.shared.data.model.Song(
         id = id,
         title = title,
@@ -46,8 +48,8 @@ fun SongEntity.toSong(): chromahub.rhythm.app.shared.data.model.Song {
         trackNumber = trackNumber,
         year = year,
         genre = genre,
-        dateAdded = dateAdded,
-        dateModified = dateModified.takeIf { it > 0L } ?: dateAdded,
+        dateAdded = normalizedDateAdded,
+        dateModified = normalizedDateModified.takeIf { it > 0L } ?: normalizedDateAdded,
         albumArtist = albumArtist,
         bitrate = bitrate,
         sampleRate = sampleRate,
@@ -60,6 +62,8 @@ fun SongEntity.toSong(): chromahub.rhythm.app.shared.data.model.Song {
 
 
 fun chromahub.rhythm.app.shared.data.model.Song.toEntity(): SongEntity {
+    val normalizedDateAdded = if (dateAdded in 1..99_999_999_999L) dateAdded * 1000L else dateAdded
+    val normalizedDateModified = if (dateModified in 1..99_999_999_999L) dateModified * 1000L else dateModified
     return SongEntity(
         id = id,
         title = title,
@@ -72,8 +76,8 @@ fun chromahub.rhythm.app.shared.data.model.Song.toEntity(): SongEntity {
         trackNumber = trackNumber,
         year = year,
         genre = genre,
-        dateAdded = dateAdded,
-        dateModified = dateModified,
+        dateAdded = normalizedDateAdded,
+        dateModified = normalizedDateModified.takeIf { it > 0L } ?: normalizedDateAdded,
         albumArtist = albumArtist,
         bitrate = bitrate,
         sampleRate = sampleRate,
