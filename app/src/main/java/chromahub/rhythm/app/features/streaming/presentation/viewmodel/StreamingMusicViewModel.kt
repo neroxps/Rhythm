@@ -1129,28 +1129,30 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
 
             playbackHandler?.invoke(queueWithResolvedSongs, selectedIndex)
 
-            // Record the audiobook session for the "Continue listening" card,
-            // then seek to the server-saved chapter position.
+            // Book session bookkeeping: the player (MusicViewModel) writes the
+            // chapter actually being played into BookSessionStore every 10s, so
+            // "Continue listening" follows real progress. Here we only refresh
+            // the in-memory card list (loads persisted sessions).
             if (isBookQueue && !appSettings.offlineMode.value) {
                 viewModelScope.launch(Dispatchers.IO) {
                     try {
-                        val chapterId = selectedResolvedSong.externalId ?: selectedResolvedSong.id
                         val bookId = selectedResolvedSong.albumId ?: selectedResolvedSong.id
-                        val resume = repository.getBookResumeTarget(bookId, queueWithResolvedSongs)
-                        if (resume.chapterIndex in queueWithResolvedSongs.indices) {
-                            bookSessionStore.saveSession(
-                                BookSessionStore.BookSession(
-                                    bookId = bookId,
-                                    title = selectedResolvedSong.album,
-                                    author = selectedResolvedSong.albumArtist ?: selectedResolvedSong.artist,
-                                    artworkUrl = selectedResolvedSong.artworkUri,
-                                    chapterId = chapterId,
-                                    chapterIndex = resume.chapterIndex,
-                                    positionMs = resume.positionMs
-                                )
+                        // Upsert/refresh with the exact chapter we started on so
+                        // the card appears immediately even before the first
+                        // 10s progress report.
+                        bookSessionStore.saveSession(
+                            BookSessionStore.BookSession(
+                                bookId = bookId,
+                                title = selectedResolvedSong.album,
+                                author = selectedResolvedSong.albumArtist ?: selectedResolvedSong.artist,
+                                artworkUrl = selectedResolvedSong.artworkUri,
+                                chapterId = selectedResolvedSong.externalId ?: selectedResolvedSong.id,
+                                chapterIndex = selectedIndex,
+                                positionMs = 0L,
+                                isAudiobook = true
                             )
-                            _lastBookSessions.value = bookSessionStore.getBookSessions()
-                        }
+                        )
+                        _lastBookSessions.value = bookSessionStore.getBookSessions()
                     } catch (e: Exception) {
                         Log.w("StreamingMusicViewModel", "Failed to save book session", e)
                     }
