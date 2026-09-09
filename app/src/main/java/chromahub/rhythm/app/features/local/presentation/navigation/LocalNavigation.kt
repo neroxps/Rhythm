@@ -352,8 +352,32 @@ private fun StreamingSong.toDisplaySong(): Song {
         bitrate = bitrate,
         sampleRate = sampleRate,
         channels = channels,
-        codec = codec
+        codec = codec,
+        isAudiobook = isBookType() || isUserMarkedAudiobookAlbum()
     )
+}
+
+/** True when the album was manually marked as an audiobook by the user. */
+private fun StreamingSong.isUserMarkedAudiobookAlbum(): Boolean {
+    val albumId = albumId?.takeIf { it.isNotBlank() } ?: return false
+    return try {
+        chromahub.rhythm.app.shared.data.model.AppSettings.getInstance(
+            chromahub.rhythm.app.RhythmApplication.instance
+        ).isAudiobookAlbum(albumId)
+    } catch (e: Exception) {
+        false
+    }
+}
+
+/** Short chapter label for progress UI: "第N集" style or the plain title. */
+private fun extractChapterLabel(song: StreamingSong?): String {
+    if (song == null) return ""
+    val index = song.trackNumber ?: song.parentIndexNumber
+    return if (index != null && index > 0) {
+        "Episode $index"
+    } else {
+        song.title
+    }
 }
 
 private fun StreamingArtist.toDisplayArtist(
@@ -2549,7 +2573,8 @@ private fun LocalNavigationContent(
                                 streamingMusicViewModel.playQueue(
                                     queue = albumSongs,
                                     startIndex = 0,
-                                    shuffle = false
+                                    shuffle = false,
+                                    autoResume = true
                                 )
                             }
                         },
@@ -2607,6 +2632,30 @@ private fun LocalNavigationContent(
                         isStreamingMode = true,
                         hideShuffle = albumSongs.any { it.isBookType() } ||
                             appSettings.isAudiobookAlbum(albumId),
+                        chapterProgress = { localSong ->
+                            albumSongsById[localSong.id]?.userData?.let { userData ->
+                                chromahub.rhythm.app.features.local.presentation.screens.AlbumChapterProgress(
+                                    songId = localSong.id,
+                                    positionMs = userData.positionMs,
+                                    durationMs = albumSongsById[localSong.id]?.duration ?: 0L,
+                                    isFinished = userData.isEffectivelyFinished(),
+                                    lastPlayedMs = userData.lastPlayedMs,
+                                    chapterLabel = extractChapterLabel(albumSongsById[localSong.id])
+                                )
+                            }
+                        },
+                        onContinueBook = { progress ->
+                            val continueSongs = albumSongs
+                            val index = continueSongs.indexOfFirst { it.id == progress.songId }.coerceAtLeast(0)
+                            if (continueSongs.isNotEmpty()) {
+                                streamingMusicViewModel.playQueue(
+                                    queue = continueSongs,
+                                    startIndex = index,
+                                    shuffle = false,
+                                    pinStartIndex = true
+                                )
+                            }
+                        },
                         favoriteSongs = streamingLikedSongIds,
                         onShowSongInfo = { song ->
                             selectedSongForInfo = song

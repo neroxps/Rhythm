@@ -2874,6 +2874,9 @@
     <string name="bookmode_continue_listening">Continue listening</string>
     <string name="bookmode_continue_listening_desc">Continue «%1$s» — Chapter %2$d</string>
     <string name="bookmode_resume_offline">Server unreachable. Playing from the beginning; progress will sync when reconnected.</string>
+    <string name="action_continue_book">Continue «%1$s»</string>
+    <string name="chapter_progress_played">Played %1$s</string>
+    <string name="chapter_progress_remaining">%1$s left</string>
     <string name="add_to_playlist_named">Add to %1$s</string>
     <string name="released_on">Released: %1$s</string>
     <!-- Widget content descriptions -->

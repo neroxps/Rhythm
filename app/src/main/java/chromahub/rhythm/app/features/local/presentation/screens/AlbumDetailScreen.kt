@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import chromahub.rhythm.app.R
@@ -108,6 +109,24 @@ private data class AlbumSongDisplayState(
     val selectedDisc: Int = 0,
     val totalDuration: Long = 0L
 )
+
+/**
+ * Progress of one audiobook chapter, derived from server UserData.
+ * Rendered as a small badge on the album song row and used to build the
+ * "Continue listening" primary action.
+ */
+data class AlbumChapterProgress(
+    val songId: String = "",
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val isFinished: Boolean = false,
+    val lastPlayedMs: Long = 0L,
+    /** Human label for the chapter, e.g. "第842集" or the chapter title. */
+    val chapterLabel: String = ""
+) {
+    val fraction: Float
+        get() = if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+}
 
 private fun String.toAlbumSortOrder(): AlbumSortOrder {
     return runCatching { AlbumSortOrder.valueOf(this) }.getOrDefault(AlbumSortOrder.TRACK_NUMBER)
@@ -214,6 +233,14 @@ fun AlbumDetailScreen(
     isStreamingMode: Boolean = false,
     /** Hid the shuffle button — used for audiobook (book mode) playback. */
     hideShuffle: Boolean = false,
+    /**
+     * Optional per-chapter progress from server UserData (positionMs + duration).
+     * Used only in streaming mode to render "已播 xx%" badges and a
+     * "Continue listening" primary action. Null = no progress info.
+     */
+    chapterProgress: (Song) -> AlbumChapterProgress? = { null },
+    /** When non-null the primary action becomes "继续播放（第 N 集）". */
+    onContinueBook: ((AlbumChapterProgress) -> Unit)? = null,
     viewModel: MusicViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -261,6 +288,20 @@ fun AlbumDetailScreen(
     val availableDiscs = songDisplayState.availableDiscs
     val selectedDisc = songDisplayState.selectedDisc
     val shouldShowDiscFilter = !libraryCombineDiscs && availableDiscs.size > 1
+
+    // Streaming book mode: find the chapter with unfinished progress for the
+    // "Continue listening" primary action and per-row progress badges.
+    val chapterProgressMap = remember(displaySongs, isStreamingMode) {
+        if (!isStreamingMode) emptyMap() else displaySongs.mapNotNull { song ->
+            chapterProgress(song)?.let { song.id to it }
+        }.toMap()
+    }
+    val continueProgress = remember(chapterProgressMap) {
+        val unfinished = chapterProgressMap.values.filter { it.positionMs > 0 && !it.isFinished }
+        if (unfinished.isEmpty()) return@remember null
+        // Prefer the most recently played; fall back to the highest position.
+        unfinished.maxByOrNull { it.lastPlayedMs } ?: unfinished.maxByOrNull { it.positionMs }
+    }
 
     // Multi-artist picker state
     var showArtistPicker by remember { mutableStateOf(false) }
@@ -1071,11 +1112,29 @@ fun AlbumDetailScreen(
                                                 },
                                                 height = 52.dp,
                                                 isFirst = true,
-                                                isLast = hideShuffle,
+                                                isLast = hideShuffle && continueProgress == null,
                                                 icon = RhythmIcons.Play,
                                                 text = stringResource(R.string.action_play_all),
                                                 fontWeight = FontWeight.Bold
                                             )
+
+                                            if (continueProgress != null) {
+                                                RhythmDetailActionButton(
+                                                    onClick = {
+                                                        HapticUtils.performHapticFeedback(context, haptics, HapticType.HEAVY)
+                                                        onContinueBook?.invoke(continueProgress)
+                                                    },
+                                                    height = 52.dp,
+                                                    type = RhythmButtonType.Tonal,
+                                                    isFirst = false,
+                                                    isLast = hideShuffle,
+                                                    icon = RhythmIcons.Audiobook,
+                                                    text = stringResource(R.string.action_continue_book, continueProgress.chapterLabel),
+                                                    fontWeight = FontWeight.Bold,
+                                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                                )
+                                            }
 
                                             if (!hideShuffle) {
                                                 RhythmDetailActionButton(
@@ -1176,6 +1235,7 @@ fun AlbumDetailScreen(
                                         currentSong = currentSong,
                                         isPlaying = isPlaying,
                                         useHoursFormat = useHoursFormat,
+                                        progress = if (isStreamingMode) chapterProgress(song) else null,
                                         onClick = { onSongClickInContext(song, displaySongs) },
                                         onMoreClick = {
                                             selectedSongForOptions = song
@@ -1503,6 +1563,7 @@ private fun AlbumSongItem(
     useHoursFormat: Boolean = false,
     index: Int = 0,
     totalCount: Int = 0,
+    progress: AlbumChapterProgress? = null,
     itemShape: RoundedCornerShape? = null
 ) {
     val context = LocalContext.current
@@ -1606,6 +1667,33 @@ private fun AlbumSongItem(
                         iconSize = 16.dp,
                         padding = 0.dp,
                         modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+
+            if (progress != null && progress.positionMs > 0) {
+                val fraction = if (progress.durationMs > 0) {
+                    progress.positionMs.toFloat() / progress.durationMs.toFloat()
+                } else {
+                    0f
+                }
+                val label = if (progress.isFinished) {
+                    "✓"
+                } else if (fraction > 0f) {
+                    "${(fraction * 100).toInt()}%"
+                } else {
+                    ""
+                }
+                if (label.isNotBlank()) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (progress.isFinished) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.tertiary
+                        },
+                        modifier = Modifier.padding(end = 8.dp)
                     )
                 }
             }

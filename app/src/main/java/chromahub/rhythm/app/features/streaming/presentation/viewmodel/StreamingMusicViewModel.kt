@@ -1008,7 +1008,15 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
     /**
      * Play a specific queue and start index.
      */
-    fun playQueue(queue: List<StreamingSong>, startIndex: Int = 0, shuffle: Boolean = false, pinStartIndex: Boolean = false) {
+    /**
+     * Play a queue of streaming songs.
+     *
+     * @param autoResume when true and the queue is a book, the start index is
+     *   replaced by the server's saved resume position (last unfinished,
+     *   most-recently-played chapter + its offset) so "Play All" on an
+     *   audiobook continues where the user left off instead of restarting.
+     */
+    fun playQueue(queue: List<StreamingSong>, startIndex: Int = 0, shuffle: Boolean = false, pinStartIndex: Boolean = false, autoResume: Boolean = false) {
         val playableQueue = queue.filter { it.isPlayable }
         if (playableQueue.isEmpty()) {
             _error.value = "No playable tracks available"
@@ -1055,6 +1063,17 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
                 playableQueue
             }
 
+            val queueToPlayWithAutoResume = if (autoResume && isBookQueue && !effectiveShuffle) {
+                // Replace the start index with the server-saved resume chapter.
+                val resume = repository.getBookResumeTarget(
+                    bookId = orderedQueue.firstOrNull()?.albumId ?: orderedQueue.firstOrNull()?.id.orEmpty(),
+                    chapters = orderedQueue
+                )
+                resume.chapterIndex.coerceIn(0, orderedQueue.lastIndex)
+            } else {
+                safeStartIndex
+            }
+
             val queueToPlay = if (effectiveShuffle && orderedQueue.size > 1) {
                 if (shouldPinStart) {
                     val startSong = orderedQueue[safeStartIndex]
@@ -1073,7 +1092,7 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
             val selectedIndex = if (effectiveShuffle && queueToPlay.size > 1) {
                 0
             } else {
-                safeStartIndex.coerceIn(0, queueToPlay.lastIndex)
+                queueToPlayWithAutoResume.coerceIn(0, queueToPlay.lastIndex)
             }
 
             val selectedSong = queueToPlay[selectedIndex]
@@ -2279,6 +2298,10 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
             else -> ("streaming://track/$id").toUri()
         }
 
+        val userMarked = albumId
+            ?.takeIf { it.isNotBlank() }
+            ?.let { appSettings.isAudiobookAlbum(it) } == true
+
         return Song(
             id = id,
             title = title,
@@ -2289,7 +2312,7 @@ class StreamingMusicViewModel(application: Application) : AndroidViewModel(appli
             uri = playbackUri,
             artworkUri = artworkUri?.takeIf { it.isNotBlank() }?.let(Uri::parse),
             albumArtist = albumArtist,
-            isAudiobook = isBookType()
+            isAudiobook = isBookType() || userMarked
         )
     }
 }

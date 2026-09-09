@@ -18,6 +18,10 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import androidx.core.content.edit
@@ -282,7 +286,7 @@ class JellyfinApiClient(context: Context) {
         }
     }
 
-    suspend fun getAlbumSongs(albumId: String, limit: Int = 500): Result<List<ProviderSong>> {
+    suspend fun getAlbumSongs(albumId: String, limit: Int = 2000): Result<List<ProviderSong>> {
         val cred = credentials ?: return Result.failure(IllegalStateException("Jellyfin service is not connected"))
         if (albumId.isBlank()) {
             return Result.failure(IllegalArgumentException("Album id is required"))
@@ -978,6 +982,34 @@ class JellyfinApiClient(context: Context) {
         }
     }
 
+    /**
+     * Parse a Jellyfin/Emby ISO-8601 date string ("2026-02-01T12:30:45.1234567Z"
+     * or with offset) into epoch millis. Returns 0 on any parse failure.
+     */
+    private fun parseJellyfinDateMs(raw: String): Long {
+        if (raw.isBlank()) return 0L
+        return try {
+            val normalized = raw.trim()
+            val hasOffsetEnd = normalized.contains("Z") || normalized.contains("+") ||
+                normalized.regexOffsetPattern()
+            val instant = when {
+                normalized.endsWith("Z") ->
+                    Instant.parse(normalized)
+                hasOffsetEnd ->
+                    OffsetDateTime.parse(normalized, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant()
+                else ->
+                    Instant.parse(normalized + "Z") // naive server time assumed UTC
+            }
+            instant.toEpochMilli()
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    /** True when the date string carries a timezone offset (e.g. +08:00). */
+    private fun String.regexOffsetPattern(): Boolean =
+        Regex("[+-]\\d{2}:?\\d{2}$").containsMatchIn(this)
+
     private fun parseAudioItems(response: JSONObject): List<ProviderSong> {
         val items = response.optJSONArray("Items") ?: return emptyList()
         return buildList {
@@ -1039,7 +1071,8 @@ class JellyfinApiClient(context: Context) {
                         playbackPositionTicks = userDataJson.optLong("PlaybackPositionTicks", 0L),
                         playedPercentage = userDataJson.optDouble("PlayedPercentage", 0.0),
                         played = userDataJson.optBoolean("Played", false),
-                        hasPlayed = userDataJson.optBoolean("Played", false)
+                        hasPlayed = userDataJson.optBoolean("Played", false),
+                        lastPlayedMs = parseJellyfinDateMs(userDataJson.optString("LastPlayedDate", ""))
                     )
                 } else null
 

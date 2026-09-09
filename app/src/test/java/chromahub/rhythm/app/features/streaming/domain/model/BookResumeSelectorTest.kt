@@ -15,7 +15,8 @@ class BookResumeSelectorTest {
         name: String,
         positionMs: Long = 0L,
         playedPercentage: Double = 0.0,
-        played: Boolean = false
+        played: Boolean = false,
+        lastPlayedMs: Long = 0L
     ) = StreamingSong(
         id = "JELLYFIN::$name",
         title = name,
@@ -32,7 +33,8 @@ class BookResumeSelectorTest {
                 positionMs = positionMs,
                 playedPercentage = playedPercentage,
                 played = played,
-                hasPlayed = played
+                hasPlayed = played,
+                lastPlayedMs = lastPlayedMs
             )
         } else null
     )
@@ -41,7 +43,7 @@ class BookResumeSelectorTest {
     fun resumesAtLastIncompleteChapter() {
         val chapters = listOf(
             chapter("ch1", positionMs = 600_000, playedPercentage = 95.0), // finished
-            chapter("ch2", positionMs = 30_000, playedPercentage = 10.0),  // last partial → target
+            chapter("ch2", positionMs = 30_000, playedPercentage = 10.0, lastPlayedMs = 1_000L),  // last partial → target
             chapter("ch3", positionMs = 0L)
         )
         val target = BookResumeSelector.select(chapters)
@@ -83,11 +85,46 @@ class BookResumeSelectorTest {
         // ch1 finished, ch2 partial, ch3 never played → ch2 is correct resume point
         val chapters = listOf(
             chapter("ch1", positionMs = 900_000, playedPercentage = 96.0),
-            chapter("ch2", positionMs = 150_000, playedPercentage = 40.0),
+            chapter("ch2", positionMs = 150_000, playedPercentage = 40.0, lastPlayedMs = 2_000L),
             chapter("ch3")
         )
         val target = BookResumeSelector.select(chapters)
         assertEquals(1, target.chapterIndex)
         assertEquals(150_000L, target.positionMs)
+    }
+
+    @Test
+    fun mostRecentlyPlayedWinsOverHighestIndex() {
+        // Random playback left older progress on a later chapter; the most
+        // recently played (earlier) chapter is the true "continue" point.
+        val chapters = listOf(
+            chapter("ch800", positionMs = 1_000_000, playedPercentage = 20.0, lastPlayedMs = 3_000L),
+            chapter("ch842", positionMs = 500_000, playedPercentage = 40.0, lastPlayedMs = 9_000L)
+        )
+        val target = BookResumeSelector.select(chapters)
+        assertEquals(1, target.chapterIndex)
+        assertEquals(500_000L, target.positionMs)
+    }
+
+    @Test
+    fun withoutLastPlayedDates_fallsBackToHighestIndex() {
+        val chapters = listOf(
+            chapter("ch800", positionMs = 1_000_000, playedPercentage = 20.0),
+            chapter("ch842", positionMs = 500_000, playedPercentage = 40.0)
+        )
+        val target = BookResumeSelector.select(chapters)
+        assertEquals(1, target.chapterIndex)
+        assertEquals(500_000L, target.positionMs)
+    }
+
+    @Test
+    fun ignoresFinishedChaptersEvenWhenRecentlyPlayed() {
+        val chapters = listOf(
+            chapter("ch1", positionMs = 900_000, playedPercentage = 96.0, lastPlayedMs = 99_000L),
+            chapter("ch2", positionMs = 100_000, playedPercentage = 30.0, lastPlayedMs = 50_000L)
+        )
+        val target = BookResumeSelector.select(chapters)
+        assertEquals(1, target.chapterIndex)
+        assertEquals(100_000L, target.positionMs)
     }
 }

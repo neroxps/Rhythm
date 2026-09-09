@@ -42,7 +42,9 @@ data class ProviderUserData(
     val playbackPositionTicks: Long = 0L,
     val playedPercentage: Double = 0.0,
     val played: Boolean = false,
-    val hasPlayed: Boolean = false
+    val hasPlayed: Boolean = false,
+    /** Last play timestamp in epoch millis, when provided by the server. */
+    val lastPlayedMs: Long = 0L
 ) {
     /** Resume position in milliseconds (ticks -> ms). */
     val positionMs: Long

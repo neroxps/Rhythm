@@ -1571,7 +1571,7 @@ class StreamingMusicRepositoryImpl(
                     positionMs = it.positionMs,
                     playedPercentage = it.playedPercentage,
                     played = it.played,
-                    lastPlayedMs = 0L,
+                    lastPlayedMs = it.lastPlayedMs,
                     hasPlayed = it.hasPlayed
                 )
             }
